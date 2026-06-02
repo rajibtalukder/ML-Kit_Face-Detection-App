@@ -20,10 +20,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             FaceDetectionAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    Greeting(
-                        name = "Android",
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                    Greeting("Android", modifier = Modifier.padding(innerPadding))
                 }
             }
         }
