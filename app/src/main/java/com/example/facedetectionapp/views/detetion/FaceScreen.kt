@@ -1,4 +1,4 @@
-package com.example.facedetectionapp.views
+package com.example.facedetectionapp.views.detetion
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 
 @Composable
-fun AttendanceMainScreen(modifier: Modifier) {
+fun FaceScreen(modifier: Modifier) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -33,14 +33,17 @@ fun AttendanceMainScreen(modifier: Modifier) {
     }
 
     if (hasCameraPermission) {
-        Log.d("AttendanceMainScreen", "Camera permission granted. Displaying FaceAttendanceCameraScreen.")
+        Log.d("FaceScreen", "Camera permission granted. Displaying FaceAttendanceCameraScreen.")
         FaceAttendanceCameraScreen(
             modifier = Modifier.fillMaxSize(),
             onFaceProcessed = { face ->
                 // Verification Trigger:
                 // Log bounding box data, or trigger your TFLite feature extractor match.
                 val bounds = face.boundingBox
-                println("Face detected at: L:${bounds.left}, T:${bounds.top}, R:${bounds.right}, B:${bounds.bottom}")
+                Log.d(
+                    "✅Face detected at: ",
+                    "L:${bounds.left}, T:${bounds.top}, R:${bounds.right}, B:${bounds.bottom}"
+                )
             }
         )
     } else {

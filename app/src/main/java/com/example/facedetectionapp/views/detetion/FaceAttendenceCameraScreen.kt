@@ -1,4 +1,4 @@
-package com.example.facedetectionapp.views
+package com.example.facedetectionapp.views.detetion
 
 
 import android.util.Size
@@ -23,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.face.Face
 import java.util.concurrent.Executors
@@ -50,7 +51,7 @@ fun FaceAttendanceCameraScreen(
                 .background(Color.Black)
                 .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(24.dp))
         ) {
-            androidx.compose.ui.viewinterop.AndroidView(
+            AndroidView(
                 factory = { previewView },
                 modifier = Modifier.fillMaxSize()
             ) { _ ->
@@ -69,12 +70,12 @@ fun FaceAttendanceCameraScreen(
 
                 imageAnalysis.setAnalyzer(
                     cameraExecutor,
-                    AttendanceFaceAnalyzer { faces, inputImage ->
+                    FaceAnalyzer { faces, inputImage ->
                         if (faces.isNotEmpty()) {
                             // Target the closest or largest prominent face in frame
                             val primaryFace = faces.first()
 
-                            // 1. You have the bounding box: primaryFace.boundingBox
+                            // 1. box: primaryFace.boundingBox
                             // 2. Pass it down to execute your attendance verification workflow
                             onFaceProcessed(primaryFace)
                         }
