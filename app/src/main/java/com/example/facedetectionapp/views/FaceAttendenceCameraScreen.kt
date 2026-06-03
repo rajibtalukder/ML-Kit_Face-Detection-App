@@ -67,19 +67,19 @@ fun FaceAttendanceCameraScreen(
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
-//                imageAnalysis.setAnalyzer(
-//                    cameraExecutor,
-//                    AttendanceFaceAnalyzer { faces, inputImage ->
-//                        if (faces.isNotEmpty()) {
-//                            // Target the closest or largest prominent face in frame
-//                            val primaryFace = faces.first()
-//
-//                            // 1. You have the bounding box: primaryFace.boundingBox
-//                            // 2. Pass it down to execute your attendance verification workflow
-//                            onFaceProcessed(primaryFace)
-//                        }
-//                    }
-//                )
+                imageAnalysis.setAnalyzer(
+                    cameraExecutor,
+                    AttendanceFaceAnalyzer { faces, inputImage ->
+                        if (faces.isNotEmpty()) {
+                            // Target the closest or largest prominent face in frame
+                            val primaryFace = faces.first()
+
+                            // 1. You have the bounding box: primaryFace.boundingBox
+                            // 2. Pass it down to execute your attendance verification workflow
+                            onFaceProcessed(primaryFace)
+                        }
+                    }
+                )
 
                     val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
