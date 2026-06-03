@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.facedetectionapp.ui.theme.FaceDetectionAppTheme
+import com.example.facedetectionapp.views.AttendanceMainScreen
 import com.example.facedetectionapp.views.FaceScreen
 
 class MainActivity : ComponentActivity() {
@@ -24,7 +25,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             FaceDetectionAppTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    FaceScreen(modifier = Modifier.padding(innerPadding))
+                    //FaceScreen(modifier = Modifier.padding(innerPadding))
+                    AttendanceMainScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
