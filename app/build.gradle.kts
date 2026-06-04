@@ -40,6 +40,11 @@ android {
 }
 
 dependencies {
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    // For type safety via Kotlin Serialization
+    implementation(libs.kotlinx.serialization.json)
+
     // CameraX Core and Lifecycle
     implementation(libs.androidx.camera.core)
     implementation(libs.androidx.camera.camera2)
@@ -55,6 +60,8 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.navigation.runtime.ktx)
+    implementation(libs.androidx.navigation.compose)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

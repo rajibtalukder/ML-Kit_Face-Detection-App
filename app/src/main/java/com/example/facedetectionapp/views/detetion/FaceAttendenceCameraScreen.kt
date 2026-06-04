@@ -30,7 +30,6 @@ import java.util.concurrent.Executors
 
 @Composable
 fun FaceAttendanceCameraScreen(
-    modifier: Modifier = Modifier,
     onFaceProcessed: (Face) -> Unit
 ) {
     val context = LocalContext.current

@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import com.example.facedetectionapp.ui.theme.FaceDetectionAppTheme
 import com.example.facedetectionapp.views.EntryScreen
 import com.example.facedetectionapp.views.detetion.FaceScreen
+import com.example.facedetectionapp.views.navigation.AppNavHost
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -18,10 +19,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             FaceDetectionAppTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    //FaceScreen(modifier = Modifier.padding(innerPadding))
-                    EntryScreen(modifier = Modifier.padding(innerPadding))
-                }
+                AppNavHost()
             }
         }
     }
