@@ -47,7 +47,7 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit) {
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "Verify identity via Face Detection",
+                    text = "Verify identity via your Face",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),

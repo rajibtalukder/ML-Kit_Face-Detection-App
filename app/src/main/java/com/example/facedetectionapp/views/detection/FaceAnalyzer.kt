@@ -1,4 +1,4 @@
-package com.example.facedetectionapp.views.detetion
+package com.example.facedetectionapp.views.detection
 
 import androidx.annotation.OptIn
 import androidx.camera.core.ExperimentalGetImage

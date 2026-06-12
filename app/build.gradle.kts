@@ -44,6 +44,7 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     // For type safety via Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
+    implementation("com.github.bumptech.glide:glide:5.0.7")
 
     // CameraX Core and Lifecycle
     implementation(libs.androidx.camera.core)
