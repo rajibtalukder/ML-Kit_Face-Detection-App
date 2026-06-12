@@ -1,43 +1,56 @@
 package com.example.facedetectionapp.views.detection
 
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.facedetectionapp.database.AppDatabase
 import com.example.facedetectionapp.database.UserFaceEntity
+import com.example.facedetectionapp.utils.FaceMathUtils.calculateEuclideanDistance
 import com.google.mlkit.vision.face.Face
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.math.sqrt
+import kotlinx.coroutines.withContext
 
 @Composable
 fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // Initialize Room Database dependencies
+    // 1. Initialize Room Database and Decoder components securely
     val db = remember { AppDatabase.getDatabase(context) }
     val userDao = remember { db.userFaceDao() }
+    val faceNetEncoder = remember { MobileFaceNetEncoder(context) }
 
     var hasCameraPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
 
+    // Receives the cropped 112x112 px bitmap frame directly from the analyzer interface
     var latestFaceData by remember { mutableStateOf<Pair<Face, Bitmap>?>(null) }
+    var statusText by remember { mutableStateOf("Align face inside the frame scanner") }
+    var isVerifiedStatus by remember { mutableStateOf<Boolean?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -51,140 +64,156 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
     }
 
     if (hasCameraPermission) {
-        Box(modifier = Modifier.fillMaxSize()) {
-
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF121212)) // Dark sleek theme
+        ) {
+            // Render the full screen Camera system
             FaceAttendanceCameraScreen(
-                onFaceProcessed = { face, fullFrameBitmap ->
-                    latestFaceData = Pair(face, fullFrameBitmap)
+                onFaceProcessed = { face, croppedFaceBitmap ->
+                    latestFaceData = Pair(face, croppedFaceBitmap)
                 }
             )
 
+            // Top Status Panel Display overlay
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 40.dp)
+                    .align(Alignment.TopCenter),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = when (isVerifiedStatus) {
+                        true -> Color(0xFF1B5E20).copy(alpha = 0.9f) // Deep Green
+                        false -> Color(0xFFB71C1C).copy(alpha = 0.9f) // Deep Red
+                        null -> Color.Black.copy(alpha = 0.7f)
+                    }
+                )
+            ) {
+                Text(
+                    text = statusText,
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                )
+            }
+
+            // Bottom Actions Control Panel
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 48.dp)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
-                // REGISTER USER BUTTON
+                // REGISTER USER ACTION BUTTON
                 Button(
                     onClick = {
-                        latestFaceData?.let { (face, bitmap) ->
-                            val embedding = registerFaceId(face, bitmap)
-                            Log.d("Registration", "Face embedding: $embedding")
-                            if (embedding != null) {
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    // Mocking Name Input: Replace "User_${System.currentTimeMillis()}" with a real input field text
+                        latestFaceData?.let { (_, croppedBitmap) ->
+                            statusText = "Extracting features..."
+                            coroutineScope.launch(Dispatchers.Default) {
+                                val embedding = faceNetEncoder.getFaceEmbedding(croppedBitmap)
+
+                                withContext(Dispatchers.IO) {
+                                    val generatedIdName = "User_${System.currentTimeMillis()}"
                                     val newProfile = UserFaceEntity(
-                                        name = "User_${System.currentTimeMillis()}",
+                                        name = generatedIdName,
                                         faceId = embedding
                                     )
                                     userDao.insertFace(newProfile)
-                                    Log.d("RoomDB", "💾 Successfully saved ${newProfile.name} profile into Room Database!")
+
+                                    withContext(Dispatchers.Main) {
+                                        isVerifiedStatus = true
+                                        statusText = "💾 Successfully Registered:\n$generatedIdName"
+                                    }
                                 }
                             }
-                        } ?: Log.e("Registration", "No face aligned in viewport.")
+                        } ?: run {
+                            statusText = "⚠️ Center your face inside the frame"
+                            isVerifiedStatus = null
+                        }
                     },
-                    modifier = Modifier.width(220.dp).height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Blue)
+                    modifier = Modifier
+                        .width(260.dp)
+                        .height(54.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2962FF)) // Bright Cobalt Blue
                 ) {
-                    Text("Register Face", color = Color.White)
+                    Text("Register Face Template", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
-                // IDENTIFY / VERIFY PERSON BUTTON
+                // VERIFY / AUTHENTICATE PERSON ACTION BUTTON
                 Button(
                     onClick = {
-                        latestFaceData?.let { (face, bitmap) ->
+                        latestFaceData?.let { (_, croppedBitmap) ->
+                            statusText = "Scanning bio-metrics..."
                             coroutineScope.launch(Dispatchers.IO) {
-                                // 1. Pull all saved biometric vectors from Room DB
                                 val savedProfiles = userDao.getAllRegisteredFaces()
 
-                                // 2. Pass to verification engine
-                                identifyPersonFromDatabase(face, bitmap, savedProfiles)
+                                if (savedProfiles.isEmpty()) {
+                                    withContext(Dispatchers.Main) {
+                                        isVerifiedStatus = false
+                                        statusText = "❌ Local Database Empty! Register a face first."
+                                    }
+                                    return@launch
+                                }
+
+                                val currentEmbedding = faceNetEncoder.getFaceEmbedding(croppedBitmap)
+
+                                var matchedUserName = "Unknown Person"
+                                var lowestDistance = 0.40f // Strict MobileFaceNet Euclidean ceiling
+
+                                for (profile in savedProfiles) {
+                                    val distance = calculateEuclideanDistance(currentEmbedding, profile.faceId)
+                                    if (distance < lowestDistance) {
+                                        lowestDistance = distance
+                                        matchedUserName = profile.name
+                                    }
+                                }
+
+                                withContext(Dispatchers.Main) {
+                                    if (matchedUserName != "Unknown Person") {
+                                        isVerifiedStatus = true
+                                        statusText = "✅ Access Granted: $matchedUserName"
+                                        Log.d("FaceAuth", "Match Verified: $matchedUserName (Distance: $lowestDistance)")
+                                    } else {
+                                        isVerifiedStatus = false
+                                        statusText = "❌ Access Denied: Unknown Identity"
+                                        Log.d("FaceAuth", "Authentication mismatch against stored logs.")
+                                    }
+                                }
                             }
-                        } ?: Log.e("Verification", "No face frame detected yet.")
+                        } ?: run {
+                            statusText = "⚠️ No face frame detected yet."
+                            isVerifiedStatus = null
+                        }
                     },
-                    modifier = Modifier.width(220.dp).height(50.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Green)
+                    modifier = Modifier
+                        .width(260.dp)
+                        .height(54.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)) // Vivid green
                 ) {
-                    Text("Verify/Detect Face", color = Color.Black)
+                    Text("Verify Attendance", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
         }
     } else {
-        Text(text = "Camera access is required for attendance tracking systems.")
-    }
-}
-
-/**
- * Iterates over Room database profiles to locate the matching user vector
- */
-fun identifyPersonFromDatabase(face: Face, fullFrame: Bitmap, databaseProfiles: List<UserFaceEntity>) {
-    if (databaseProfiles.isEmpty()) {
-        Log.e("❌ Database Empty", "No registered users found in Room DB. Please register a face first.")
-        return
-    }
-
-    val bounds = face.boundingBox
-    val left = bounds.left.coerceAtLeast(0)
-    val top = bounds.top.coerceAtLeast(0)
-    val width = bounds.width().coerceAtMost(fullFrame.width - left)
-    val height = bounds.height().coerceAtMost(fullFrame.height - top)
-
-    try {
-        val croppedFaceBitmap = Bitmap.createBitmap(fullFrame, left, top, width, height)
-        val currentEmbedding = passToTensorFlowLiteModel(croppedFaceBitmap)
-
-        var matchedUserName = "Unknown Person"
-        var lowestDistance = 1.0f // Threshold limit (values below this match the user profile)
-
-        // Loop through profiles pulled dynamically out of Room DB
-        for (profile in databaseProfiles) {
-            val distance = calculateEuclideanDistance(currentEmbedding, profile.faceId)
-            if (distance < lowestDistance) {
-                lowestDistance = distance
-                matchedUserName = profile.name
-            }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "Camera hardware access permissions are required to run bio-metric attendance verification.",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(32.dp),
+                color = Color.Gray
+            )
         }
-
-        Log.d("🔍 Identity Result", "========================================")
-        if (matchedUserName != "Unknown Person") {
-            Log.d("🔍 Identity Result", "✅ Verified: $matchedUserName (Confidence Distance: $lowestDistance)")
-        } else {
-            Log.d("🔍 Identity Result", "❌ Access Denied: User matches no registered database logs.")
-        }
-        Log.d("🔍 Identity Result", "========================================")
-
-    } catch (e: Exception) {
-        Log.e("Verification", "Error extracting validation metrics: ${e.localizedMessage}")
     }
-}
-
-fun registerFaceId(face: Face, fullFrame: Bitmap): FloatArray? {
-    val bounds = face.boundingBox
-    val left = bounds.left.coerceAtLeast(0)
-    val top = bounds.top.coerceAtLeast(0)
-    val width = bounds.width().coerceAtMost(fullFrame.width - left)
-    val height = bounds.height().coerceAtMost(fullFrame.height - top)
-    return try {
-        val croppedFaceBitmap = Bitmap.createBitmap(fullFrame, left, top, width, height)
-        passToTensorFlowLiteModel(croppedFaceBitmap)
-    } catch (e: Exception) { null }
-}
-
-fun calculateEuclideanDistance(v1: FloatArray, v2: FloatArray): Float {
-    if (v1.size != v2.size) return Float.MAX_VALUE
-    var sum = 0.0f
-    for (i in v1.indices) {
-        val diff = v1[i] - v2[i]
-        sum += diff * diff
-    }
-    return sqrt(sum)
-}
-
-fun passToTensorFlowLiteModel(bitmap: Bitmap): FloatArray {
-    // Simulated placeholder vector fingerprint array
-    return FloatArray(128) { 0.5f }
 }

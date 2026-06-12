@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -33,10 +32,11 @@ import java.util.concurrent.Executors
 
 @Composable
 fun FaceAttendanceCameraScreen(
+    // Updated callback signature to pass the cropped face bitmap directly to your ViewModel
     onFaceProcessed: (Face, Bitmap) -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val previewView = remember { PreviewView(context) }
 
@@ -77,16 +77,21 @@ fun FaceAttendanceCameraScreen(
                             try {
                                 if (faces.isNotEmpty()) {
                                     val primaryFace = faces.first()
-                                    val bitmap = inputImage.toBitmap()
+                                    val fullFrameBitmap = inputImage.toBitmap()
 
-                                    if (bitmap != null) {
-                                        onFaceProcessed(primaryFace, bitmap)
+                                    if (fullFrameBitmap != null) {
+                                        // Crop out everything except the face bounding box
+                                        val croppedFace = cropToFace(fullFrameBitmap, primaryFace.boundingBox)
+
+                                        if (croppedFace != null) {
+                                            // Pass the cropped 112x112 face straight out to the logic layer
+                                            onFaceProcessed(primaryFace, croppedFace)
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
                             }
-
                         }
                     )
 
@@ -106,6 +111,31 @@ fun FaceAttendanceCameraScreen(
                 }, ContextCompat.getMainExecutor(context))
             }
         }
+    }
+}
+
+/**
+ * Isolates the detected face bounding box coordinates out of the parent camera frame
+ * and scales it cleanly to match MobileFaceNet requirements.
+ */
+fun cropToFace(bitmap: Bitmap, boundingBox: Rect): Bitmap? {
+    return try {
+        // Enforce boundary safety thresholds against the edges of the parent frame matrix
+        val left = boundingBox.left.coerceAtLeast(0)
+        val top = boundingBox.top.coerceAtLeast(0)
+        val width = boundingBox.width().coerceAtMost(bitmap.width - left)
+        val height = boundingBox.height().coerceAtMost(bitmap.height - top)
+
+        if (width <= 0 || height <= 0) return null
+
+        // Crop out the sub-rectangle matching the face profile coordinates
+        val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
+
+        // Scale down cleanly to exactly 112x112 for the TFLite Interpreter input tensor
+        Bitmap.createScaledBitmap(croppedBitmap, 112, 112, true)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
     }
 }
 
