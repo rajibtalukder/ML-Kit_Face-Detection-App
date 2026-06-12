@@ -1,6 +1,6 @@
-package com.example.facedetectionapp.views.detetion
+package com.example.facedetectionapp.views.detection
 
-
+import android.graphics.*
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -25,23 +25,27 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
 @Composable
 fun FaceAttendanceCameraScreen(
-    onFaceProcessed: (Face) -> Unit
+    onFaceProcessed: (Face, Bitmap) -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-
     val previewView = remember { PreviewView(context) }
 
-    Box(modifier = Modifier
-        .fillMaxSize()
-        .background(Color.White),
-        contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White),
+        contentAlignment = Alignment.Center
+    ) {
         Box(
             modifier = Modifier
                 .width(300.dp)
@@ -59,7 +63,7 @@ fun FaceAttendanceCameraScreen(
                     val cameraProvider = cameraProviderFuture.get()
 
                     val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
+                        it.surfaceProvider = previewView.surfaceProvider
                     }
 
                     val imageAnalysis = ImageAnalysis.Builder()
@@ -67,19 +71,24 @@ fun FaceAttendanceCameraScreen(
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
 
-                imageAnalysis.setAnalyzer(
-                    cameraExecutor,
-                    FaceAnalyzer { faces, inputImage ->
-                        if (faces.isNotEmpty()) {
-                            // Target the closest or largest prominent face in frame
-                            val primaryFace = faces.first()
+                    imageAnalysis.setAnalyzer(
+                        cameraExecutor,
+                        FaceAnalyzer { faces, inputImage ->
+                            try {
+                                if (faces.isNotEmpty()) {
+                                    val primaryFace = faces.first()
+                                    val bitmap = inputImage.toBitmap()
 
-                            // 1. box: primaryFace.boundingBox
-                            // 2. Pass it down to execute your attendance verification workflow
-                            onFaceProcessed(primaryFace)
+                                    if (bitmap != null) {
+                                        onFaceProcessed(primaryFace, bitmap)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+
                         }
-                    }
-                )
+                    )
 
                     val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
@@ -100,6 +109,34 @@ fun FaceAttendanceCameraScreen(
     }
 }
 
+fun InputImage.toBitmap(): Bitmap? {
+    val mediaImage = this.mediaImage ?: return null
 
+    val planes = mediaImage.planes
+    val yBuffer = planes[0].buffer
+    val uBuffer = planes[1].buffer
+    val vBuffer = planes[2].buffer
 
+    val ySize = yBuffer.remaining()
+    val uSize = uBuffer.remaining()
+    val vSize = vBuffer.remaining()
 
+    val nv21 = ByteArray(ySize + uSize + vSize)
+    yBuffer.get(nv21, 0, ySize)
+    vBuffer.get(nv21, ySize, vSize)
+    uBuffer.get(nv21, ySize + vSize, uSize)
+
+    val yuvImage = YuvImage(nv21, ImageFormat.NV21, mediaImage.width, mediaImage.height, null)
+    val out = ByteArrayOutputStream()
+    yuvImage.compressToJpeg(Rect(0, 0, yuvImage.width, yuvImage.height), 100, out)
+
+    val imageBytes = out.toByteArray()
+    val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+
+    return bitmap?.let {
+        val matrix = Matrix()
+        matrix.postRotate(this.rotationDegrees.toFloat())
+        matrix.postScale(-1f, 1f, it.width / 2f, it.height / 2f)
+        Bitmap.createBitmap(it, 0, 0, it.width, it.height, matrix, true)
+    }
+}
