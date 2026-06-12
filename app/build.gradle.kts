@@ -37,10 +37,13 @@ android {
     }
     buildFeatures {
         compose = true
+        mlModelBinding = true
     }
 }
 
 dependencies {
+    implementation(libs.tensorflow.lite)
+    implementation(libs.tensorflow.lite.support)
     implementation (libs.androidx.room.runtime)
     implementation (libs.androidx.lifecycle.livedata.ktx)
     implementation (libs.androidx.lifecycle.viewmodel.ktx)
@@ -50,7 +53,7 @@ dependencies {
     implementation(libs.androidx.navigation3.ui)
     // For type safety via Kotlin Serialization
     implementation(libs.kotlinx.serialization.json)
-    implementation("com.github.bumptech.glide:glide:5.0.7")
+    implementation(libs.glide)
 
     // CameraX Core and Lifecycle
     implementation(libs.androidx.camera.core)
@@ -76,4 +79,10 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+}
+
+// Add this at the very bottom of your app-level build.gradle.kts file
+configurations.all {
+    exclude(group = "com.google.ai.edge.litert", module = "litert-support")
+    exclude(group = "com.google.ai.edge.litert", module = "litert-support-api")
 }
