@@ -1,4 +1,4 @@
-package com.example.facedetectionapp.views.detetion
+package com.example.facedetectionapp.views.detection
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -19,11 +19,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.example.facedetectionapp.database.AppDatabase
 import com.example.facedetectionapp.database.UserFaceEntity
-import com.example.facedetectionapp.views.detection.FaceAttendanceCameraScreen
 import com.google.mlkit.vision.face.Face
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
 
 @Composable
@@ -75,6 +73,7 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
                     onClick = {
                         latestFaceData?.let { (face, bitmap) ->
                             val embedding = registerFaceId(face, bitmap)
+                            Log.d("Registration", "Face embedding: $embedding")
                             if (embedding != null) {
                                 coroutineScope.launch(Dispatchers.IO) {
                                     // Mocking Name Input: Replace "User_${System.currentTimeMillis()}" with a real input field text
