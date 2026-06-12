@@ -17,24 +17,29 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.example.facedetectionapp.database.AppDatabase
+import com.example.facedetectionapp.database.UserFaceEntity
 import com.example.facedetectionapp.views.detection.FaceAttendanceCameraScreen
 import com.google.mlkit.vision.face.Face
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
 
 @Composable
 fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Initialize Room Database dependencies
+    val db = remember { AppDatabase.getDatabase(context) }
+    val userDao = remember { db.userFaceDao() }
+
     var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
 
-    // Holds the latest frames detected dynamically by the camera stream
     var latestFaceData by remember { mutableStateOf<Pair<Face, Bitmap>?>(null) }
-
-    // VARIABLE REQUESTED: Simulates your database storage for the registered Face ID vector array
-    var registeredFaceId by remember { mutableStateOf<FloatArray?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -65,16 +70,23 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
 
-                // REGISTER BUTTON
+                // REGISTER USER BUTTON
                 Button(
                     onClick = {
                         latestFaceData?.let { (face, bitmap) ->
                             val embedding = registerFaceId(face, bitmap)
                             if (embedding != null) {
-                                registeredFaceId = embedding // Saved into variable!
-                                Log.d("🔒 Registration", "Successfully saved Face ID to variable (lastFaceId)! $registeredFaceId")
+                                coroutineScope.launch(Dispatchers.IO) {
+                                    // Mocking Name Input: Replace "User_${System.currentTimeMillis()}" with a real input field text
+                                    val newProfile = UserFaceEntity(
+                                        name = "User_${System.currentTimeMillis()}",
+                                        faceId = embedding
+                                    )
+                                    userDao.insertFace(newProfile)
+                                    Log.d("RoomDB", "💾 Successfully saved ${newProfile.name} profile into Room Database!")
+                                }
                             }
-                        } ?: Log.e("Registration", "No face frame detected yet. Please look at the camera.")
+                        } ?: Log.e("Registration", "No face aligned in viewport.")
                     },
                     modifier = Modifier.width(220.dp).height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Blue)
@@ -82,11 +94,17 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
                     Text("Register Face", color = Color.White)
                 }
 
-                // VERIFY BUTTON
+                // IDENTIFY / VERIFY PERSON BUTTON
                 Button(
                     onClick = {
                         latestFaceData?.let { (face, bitmap) ->
-                            //verifyFaceId(face, bitmap, registeredFaceId)
+                            coroutineScope.launch(Dispatchers.IO) {
+                                // 1. Pull all saved biometric vectors from Room DB
+                                val savedProfiles = userDao.getAllRegisteredFaces()
+
+                                // 2. Pass to verification engine
+                                identifyPersonFromDatabase(face, bitmap, savedProfiles)
+                            }
                         } ?: Log.e("Verification", "No face frame detected yet.")
                     },
                     modifier = Modifier.width(220.dp).height(50.dp),
@@ -101,30 +119,12 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
     }
 }
 
-
-fun registerFaceId(face: Face, fullFrame: Bitmap): FloatArray? {
-    val bounds = face.boundingBox
-    val left = bounds.left.coerceAtLeast(0)
-    val top = bounds.top.coerceAtLeast(0)
-    val width = bounds.width().coerceAtMost(fullFrame.width - left)
-    val height = bounds.height().coerceAtMost(fullFrame.height - top)
-
-    return try {
-        val croppedFaceBitmap = Bitmap.createBitmap(fullFrame, left, top, width, height)
-
-        // Feed the cropped face image into your TFLite pipeline to generate the unique array
-        val generatedEmbedding = passToTensorFlowLiteModel(croppedFaceBitmap)
-        generatedEmbedding
-    } catch (e: Exception) {
-        Log.e("Registration", "Failed cropping face frame: ${e.localizedMessage}")
-        null
-    }
-}
-
-
-fun verifyFaceId(face: Face, fullFrame: Bitmap, registeredEmbedding: FloatArray?) {
-    if (registeredEmbedding == null) {
-        Log.e("❌ Verification Error", "Cannot verify! No user has been registered in the variable yet.")
+/**
+ * Iterates over Room database profiles to locate the matching user vector
+ */
+fun identifyPersonFromDatabase(face: Face, fullFrame: Bitmap, databaseProfiles: List<UserFaceEntity>) {
+    if (databaseProfiles.isEmpty()) {
+        Log.e("❌ Database Empty", "No registered users found in Room DB. Please register a face first.")
         return
     }
 
@@ -136,49 +136,56 @@ fun verifyFaceId(face: Face, fullFrame: Bitmap, registeredEmbedding: FloatArray?
 
     try {
         val croppedFaceBitmap = Bitmap.createBitmap(fullFrame, left, top, width, height)
-
-        // Generate a fresh temporary embedding for the person standing at the camera right now
         val currentEmbedding = passToTensorFlowLiteModel(croppedFaceBitmap)
 
-        // Calculate the mathematical difference between the registered vector and current vector
-        val distance = calculateEuclideanDistance(currentEmbedding, registeredEmbedding)
+        var matchedUserName = "Unknown Person"
+        var lowestDistance = 1.0f // Threshold limit (values below this match the user profile)
 
-        // Typically, a distance lower than 1.0 implies it's a match when using models like MobileFaceNet
-        val threshold = 1.0
-        val isMatch = distance < threshold
-
-        Log.d("🔍 Verification Result", "---------------------------------------------$registeredEmbedding")
-        Log.d("🔍 Verification Result", "Calculated Vector Distance: $distance")
-        if (isMatch) {
-            Log.d("🔍 Verification Result", "✅ MATCH SUCCESSFUL! Access/Attendance Granted.")
-        } else {
-            Log.d("🔍 Verification Result", "❌ MATCH FAILED! Face identity does not match the registered profile.")
+        // Loop through profiles pulled dynamically out of Room DB
+        for (profile in databaseProfiles) {
+            val distance = calculateEuclideanDistance(currentEmbedding, profile.faceId)
+            if (distance < lowestDistance) {
+                lowestDistance = distance
+                matchedUserName = profile.name
+            }
         }
-        Log.d("🔍 Verification Result", "---------------------------------------------")
+
+        Log.d("🔍 Identity Result", "========================================")
+        if (matchedUserName != "Unknown Person") {
+            Log.d("🔍 Identity Result", "✅ Verified: $matchedUserName (Confidence Distance: $lowestDistance)")
+        } else {
+            Log.d("🔍 Identity Result", "❌ Access Denied: User matches no registered database logs.")
+        }
+        Log.d("🔍 Identity Result", "========================================")
 
     } catch (e: Exception) {
-        Log.e("Verification", "Error processing verification frame: ${e.localizedMessage}")
+        Log.e("Verification", "Error extracting validation metrics: ${e.localizedMessage}")
     }
 }
 
-/**
- * Math Helper: Computes the distance between two vector coordinate point mappings
- */
-fun calculateEuclideanDistance(vector1: FloatArray, vector2: FloatArray): Float {
-    if (vector1.size != vector2.size) return Float.MAX_VALUE
+fun registerFaceId(face: Face, fullFrame: Bitmap): FloatArray? {
+    val bounds = face.boundingBox
+    val left = bounds.left.coerceAtLeast(0)
+    val top = bounds.top.coerceAtLeast(0)
+    val width = bounds.width().coerceAtMost(fullFrame.width - left)
+    val height = bounds.height().coerceAtMost(fullFrame.height - top)
+    return try {
+        val croppedFaceBitmap = Bitmap.createBitmap(fullFrame, left, top, width, height)
+        passToTensorFlowLiteModel(croppedFaceBitmap)
+    } catch (e: Exception) { null }
+}
+
+fun calculateEuclideanDistance(v1: FloatArray, v2: FloatArray): Float {
+    if (v1.size != v2.size) return Float.MAX_VALUE
     var sum = 0.0f
-    for (i in vector1.indices) {
-        val diff = vector1[i] - vector2[i]
+    for (i in v1.indices) {
+        val diff = v1[i] - v2[i]
         sum += diff * diff
     }
     return sqrt(sum)
 }
 
-/**
- * Mock Model Interpreter
- */
-fun passToTensorFlowLiteModel(croppedFace: Bitmap): FloatArray {
-    // Note: For testing verification logs locally, this currently outputs a predictable mock array.
-    // Replace this array with your true TFLite model output processing in production.
+fun passToTensorFlowLiteModel(bitmap: Bitmap): FloatArray {
+    // Simulated placeholder vector fingerprint array
     return FloatArray(128) { 0.5f }
 }
