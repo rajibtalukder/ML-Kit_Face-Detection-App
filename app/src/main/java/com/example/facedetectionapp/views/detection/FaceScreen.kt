@@ -153,47 +153,38 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
                 // VERIFY / AUTHENTICATE PERSON ACTION BUTTON
                 Button(
                     onClick = {
-                        latestFaceData?.let { (_, croppedBitmap) ->
-                            statusText = "Scanning bio-metrics..."
-                            coroutineScope.launch(Dispatchers.IO) {
-                                val savedProfiles = userDao.getAllRegisteredFaces()
-
-                                if (savedProfiles.isEmpty()) {
-                                    withContext(Dispatchers.Main) {
-                                        isVerifiedStatus = false
-                                        statusText = "❌ Local Database Empty! Register a face first."
-                                    }
-                                    return@launch
-                                }
-
-                                val currentEmbedding = faceNetEncoder.getFaceEmbedding(croppedBitmap)
-
-                                var matchedUserName = "Unknown Person"
-                                var lowestDistance = 0.40f // Strict MobileFaceNet Euclidean ceiling
-
-                                for (profile in savedProfiles) {
-                                    val distance = calculateEuclideanDistance(currentEmbedding, profile.faceId)
-                                    if (distance < lowestDistance) {
-                                        lowestDistance = distance
-                                        matchedUserName = profile.name
-                                    }
-                                }
-
-                                withContext(Dispatchers.Main) {
-                                    if (matchedUserName != "Unknown Person") {
-                                        isVerifiedStatus = true
-                                        statusText = "✅ Access Granted: $matchedUserName"
-                                        Log.d("FaceAuth", "Match Verified: $matchedUserName (Distance: $lowestDistance)")
-                                    } else {
-                                        isVerifiedStatus = false
-                                        statusText = "❌ Access Denied: Unknown Identity"
-                                        Log.d("FaceAuth", "Authentication mismatch against stored logs.")
-                                    }
-                                }
-                            }
-                        } ?: run {
+                        if (latestFaceData == null) {
                             statusText = "⚠️ No face frame detected yet."
                             isVerifiedStatus = null
+                            return@Button
+                        }
+
+                        statusText = "Scanning bio-metrics..."
+
+                        coroutineScope.launch(Dispatchers.Default) {
+                            startContinuousFaceMatching(
+                                faceNetEncoder = faceNetEncoder,
+                                userDao = userDao,
+                                getLatestBitmap = { latestFaceData?.second }, // Lambda reads the latest cropped UI state bitmap
+                                onStatusUpdate = { liveStatusMessage ->
+                                    // Push ongoing retry alerts onto Main rendering thread thread safely
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        statusText = liveStatusMessage
+                                    }
+                                },
+                                onResult = { identifiedName, distance ->
+                                    coroutineScope.launch(Dispatchers.Main) {
+                                        if (identifiedName == "Database Empty") {
+                                            isVerifiedStatus = false
+                                            statusText = "❌ Local Database Empty! Register a face first."
+                                        } else {
+                                            Log.d("FaceAuth", "Person matched: $identifiedName (Distance: $distance)")
+                                            isVerifiedStatus = true
+                                            statusText = "✅ Access Granted: $identifiedName"
+                                        }
+                                    }
+                                }
+                            )
                         }
                     },
                     modifier = Modifier
