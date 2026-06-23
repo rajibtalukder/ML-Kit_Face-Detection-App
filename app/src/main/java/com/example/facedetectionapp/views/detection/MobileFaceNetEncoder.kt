@@ -1,58 +1,1 @@
-package com.example.facedetectionapp.views.detection
-
-import android.content.Context
-import android.graphics.Bitmap
-import org.tensorflow.lite.Interpreter
-import java.io.FileInputStream
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.nio.channels.FileChannel
-
-class MobileFaceNetEncoder(context: Context) {
-    private var interpreter: Interpreter
-
-    init {
-        // Load the model from your assets folder
-        val modelFile = context.assets.openFd("mobilefacenet.tflite")
-        val stream = FileInputStream(modelFile.fileDescriptor)
-        val fileChannel = stream.channel
-        val startOffset = modelFile.startOffset
-        val declaredLength = modelFile.declaredLength
-        val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
-
-        // Initialize TFLite Interpreter
-        val options = Interpreter.Options().apply {
-            setNumThreads(4) // Optimize execution speed
-        }
-        interpreter = Interpreter(mappedByteBuffer, options)
-    }
-
-    fun getFaceEmbedding(bitmap: Bitmap): FloatArray {
-        // 1. Keep your input allocation setup exactly the same (112x112 px)
-        val inputBuffer = ByteBuffer.allocateDirect(1 * 112 * 112 * 3 * 4).apply {
-            order(ByteOrder.nativeOrder())
-        }
-
-        val intValues = IntArray(112 * 112)
-        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-
-        inputBuffer.rewind()
-        for (pixelValue in intValues) {
-            val r = ((pixelValue shr 16) and 0xFF)
-            val g = ((pixelValue shr 8) and 0xFF)
-            val b = (pixelValue and 0xFF)
-
-            inputBuffer.putFloat((r - 127.5f) / 128.0f)
-            inputBuffer.putFloat((g - 127.5f) / 128.0f)
-            inputBuffer.putFloat((b - 127.5f) / 128.0f)
-        }
-
-        // 2. CRITICAL CHANGE: Increase output allocation matching your model's native properties
-        val outputArray = Array(1) { FloatArray(192) } // Changed from 128 to 192
-
-        // 3. Execute inference safely
-        interpreter.run(inputBuffer, outputArray)
-
-        return outputArray[0]
-    }
-}
+package com.example.facedetectionapp.views.detectionimport android.content.Contextimport android.graphics.Bitmapimport org.tensorflow.lite.Interpreterimport java.io.FileInputStreamimport java.nio.ByteBufferimport java.nio.ByteOrderimport java.nio.channels.FileChannelclass MobileFaceNetEncoder(context: Context) {    private var interpreter: Interpreter    init {        // Load the model from your assets folder        val modelFile = context.assets.openFd("mobilefacenet.tflite")        val stream = FileInputStream(modelFile.fileDescriptor)        val fileChannel = stream.channel        val startOffset = modelFile.startOffset        val declaredLength = modelFile.declaredLength        val mappedByteBuffer = fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)        // Initialize TFLite Interpreter        val options = Interpreter.Options().apply {            setNumThreads(4) // Optimize execution speed        }        interpreter = Interpreter(mappedByteBuffer, options)    }    fun getFaceEmbedding(bitmap: Bitmap): FloatArray {        // 1. Keep your input allocation setup exactly the same (112x112 px)        val inputBuffer = ByteBuffer.allocateDirect(1 * 112 * 112 * 3 * 4).apply {            order(ByteOrder.nativeOrder())        }        val intValues = IntArray(112 * 112)        bitmap.getPixels(intValues, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)        inputBuffer.rewind()        for (pixelValue in intValues) {            val r = ((pixelValue shr 16) and 0xFF)            val g = ((pixelValue shr 8) and 0xFF)            val b = (pixelValue and 0xFF)            inputBuffer.putFloat((r - 127.5f) / 128.0f)            inputBuffer.putFloat((g - 127.5f) / 128.0f)            inputBuffer.putFloat((b - 127.5f) / 128.0f)        }        // 2. CRITICAL CHANGE: Increase output allocation matching your model's native properties        val outputArray = Array(1) { FloatArray(192) } // Changed from 128 to 192        // 3. Execute inference safely        interpreter.run(inputBuffer, outputArray)        return outputArray[0]    }}

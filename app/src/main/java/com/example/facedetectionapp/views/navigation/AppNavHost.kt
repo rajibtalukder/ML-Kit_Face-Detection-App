@@ -6,7 +6,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.facedetectionapp.views.EntryScreen
 import com.example.facedetectionapp.views.detection.FaceAttendanceCameraScreen
-import com.example.facedetectionapp.views.detection.FaceScreen
+import com.example.facedetectionapp.views.detection.RegisterFaceIDScreen
 
 
 @Composable
@@ -20,12 +20,12 @@ fun AppNavHost(
         composable(AppScreen.EntryScreen.route) {
             EntryScreen(
                 onOpenFaceScreen = {
-                    navController.navigate(AppScreen.FaceScreen.route)
+                    navController.navigate(AppScreen.RegisterFaceIDScreen.route)
                 }
             )
         }
-        composable(AppScreen.FaceScreen.route) {
-            FaceScreen(
+        composable(AppScreen.RegisterFaceIDScreen.route) {
+            RegisterFaceIDScreen(
                 onOpenFaceAttendanceCameraScreen = {
                     navController.navigate(AppScreen.FaceAttendanceCameraScreen.route)
                 }

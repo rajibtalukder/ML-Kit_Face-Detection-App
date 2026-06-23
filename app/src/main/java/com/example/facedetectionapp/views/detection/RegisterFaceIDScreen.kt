@@ -27,14 +27,14 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.facedetectionapp.database.AppDatabase
 import com.example.facedetectionapp.database.UserFaceEntity
-import com.example.facedetectionapp.utils.FaceMathUtils.calculateEuclideanDistance
 import com.google.mlkit.vision.face.Face
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
+fun RegisterFaceIDScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
+
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
@@ -64,6 +64,29 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
     }
 
     if (hasCameraPermission) {
+        latestFaceData?.let { (_, croppedBitmap) ->
+            statusText = "Extracting features..."
+            coroutineScope.launch(Dispatchers.Default) {
+                val embedding = faceNetEncoder.getFaceEmbedding(croppedBitmap)
+
+                withContext(Dispatchers.IO) {
+                    val generatedIdName = "User_${System.currentTimeMillis()}"
+                    val newProfile = UserFaceEntity(
+                        name = generatedIdName,
+                        faceId = embedding
+                    )
+                    userDao.insertFace(newProfile)
+
+                    withContext(Dispatchers.Main) {
+                        isVerifiedStatus = true
+                        statusText = "💾 Successfully Registered:\n$generatedIdName"
+                    }
+                }
+            }
+        } ?: run {
+            statusText = "⚠️ Center your face inside the frame"
+            isVerifiedStatus = null
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -114,87 +137,6 @@ fun FaceScreen(onOpenFaceAttendanceCameraScreen: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
-                // REGISTER USER ACTION BUTTON
-                Button(
-                    onClick = {
-                        latestFaceData?.let { (_, croppedBitmap) ->
-                            statusText = "Extracting features..."
-                            coroutineScope.launch(Dispatchers.Default) {
-                                val embedding = faceNetEncoder.getFaceEmbedding(croppedBitmap)
-
-                                withContext(Dispatchers.IO) {
-                                    val generatedIdName = "User_${System.currentTimeMillis()}"
-                                    val newProfile = UserFaceEntity(
-                                        name = generatedIdName,
-                                        faceId = embedding
-                                    )
-                                    userDao.insertFace(newProfile)
-
-                                    withContext(Dispatchers.Main) {
-                                        isVerifiedStatus = true
-                                        statusText = "💾 Successfully Registered:\n$generatedIdName"
-                                    }
-                                }
-                            }
-                        } ?: run {
-                            statusText = "⚠️ Center your face inside the frame"
-                            isVerifiedStatus = null
-                        }
-                    },
-                    modifier = Modifier
-                        .width(260.dp)
-                        .height(54.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2962FF)) // Bright Cobalt Blue
-                ) {
-                    Text("Register Face Template", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-
-                // VERIFY / AUTHENTICATE PERSON ACTION BUTTON
-                Button(
-                    onClick = {
-                        if (latestFaceData == null) {
-                            statusText = "⚠️ No face frame detected yet."
-                            isVerifiedStatus = null
-                            return@Button
-                        }
-
-                        statusText = "Scanning bio-metrics..."
-
-                        coroutineScope.launch(Dispatchers.Default) {
-                            startContinuousFaceMatching(
-                                faceNetEncoder = faceNetEncoder,
-                                userDao = userDao,
-                                getLatestBitmap = { latestFaceData?.second }, // Lambda reads the latest cropped UI state bitmap
-                                onStatusUpdate = { liveStatusMessage ->
-                                    // Push ongoing retry alerts onto Main rendering thread thread safely
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        statusText = liveStatusMessage
-                                    }
-                                },
-                                onResult = { identifiedName, distance ->
-                                    coroutineScope.launch(Dispatchers.Main) {
-                                        if (identifiedName == "Database Empty") {
-                                            isVerifiedStatus = false
-                                            statusText = "❌ Local Database Empty! Register a face first."
-                                        } else {
-                                            Log.d("FaceAuth", "Person matched: $identifiedName (Distance: $distance)")
-                                            isVerifiedStatus = true
-                                            statusText = "✅ Access Granted: $identifiedName"
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                    },
-                    modifier = Modifier
-                        .width(260.dp)
-                        .height(54.dp),
-                    shape = RoundedCornerShape(28.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)) // Vivid green
-                ) {
-                    Text("Verify Attendance", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
             }
         }
     } else {
