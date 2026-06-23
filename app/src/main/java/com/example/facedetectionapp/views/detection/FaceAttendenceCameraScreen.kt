@@ -32,7 +32,6 @@ import java.util.concurrent.Executors
 
 @Composable
 fun FaceAttendanceCameraScreen(
-    // Updated callback signature to pass the cropped face bitmap directly to your ViewModel
     onFaceProcessed: (Face, Bitmap) -> Unit
 ) {
     val context = LocalContext.current
@@ -80,11 +79,9 @@ fun FaceAttendanceCameraScreen(
                                     val fullFrameBitmap = inputImage.toBitmap()
 
                                     if (fullFrameBitmap != null) {
-                                        // Crop out everything except the face bounding box
                                         val croppedFace = cropToFace(fullFrameBitmap, primaryFace.boundingBox)
 
                                         if (croppedFace != null) {
-                                            // Pass the cropped 112x112 face straight out to the logic layer
                                             onFaceProcessed(primaryFace, croppedFace)
                                         }
                                     }
@@ -114,13 +111,8 @@ fun FaceAttendanceCameraScreen(
     }
 }
 
-/**
- * Isolates the detected face bounding box coordinates out of the parent camera frame
- * and scales it cleanly to match MobileFaceNet requirements.
- */
 fun cropToFace(bitmap: Bitmap, boundingBox: Rect): Bitmap? {
     return try {
-        // Enforce boundary safety thresholds against the edges of the parent frame matrix
         val left = boundingBox.left.coerceAtLeast(0)
         val top = boundingBox.top.coerceAtLeast(0)
         val width = boundingBox.width().coerceAtMost(bitmap.width - left)
@@ -128,10 +120,8 @@ fun cropToFace(bitmap: Bitmap, boundingBox: Rect): Bitmap? {
 
         if (width <= 0 || height <= 0) return null
 
-        // Crop out the sub-rectangle matching the face profile coordinates
         val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
 
-        // Scale down cleanly to exactly 112x112 for the TFLite Interpreter input tensor
         Bitmap.createScaledBitmap(croppedBitmap, 112, 112, true)
     } catch (e: Exception) {
         e.printStackTrace()

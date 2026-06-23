@@ -96,7 +96,6 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
                 }
             }
 
-            // --- Action Controls Section ---
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -104,7 +103,6 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
-                // Primary Authentication Action
                 Button(
                     onClick = onOpenVerifyScreen,
                     modifier = Modifier
@@ -134,7 +132,6 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
                     }
                 }
 
-                // Secondary Registration Action
                 OutlinedButton(
                     onClick = onOpenFaceScreen,
                     modifier = Modifier

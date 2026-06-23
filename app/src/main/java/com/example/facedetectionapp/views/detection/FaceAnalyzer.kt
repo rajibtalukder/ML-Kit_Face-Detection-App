@@ -16,7 +16,7 @@ class FaceAnalyzer(
     private val options = FaceDetectorOptions.Builder()
         .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_ACCURATE)
         .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_ALL)
-        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE) // Optional: change if checking for blinking/smiling
+        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
         .build()
 
     private val detector = FaceDetection.getClient(options)
@@ -25,19 +25,16 @@ class FaceAnalyzer(
     override fun analyze(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
         if (mediaImage != null) {
-            // Convert CameraX frame to ML Kit InputImage with correct rotation
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
             detector.process(image)
                 .addOnSuccessListener { faces ->
-                    // Pass detected faces back to the UI/Controller
                     onFaceDetected(faces, image)
                 }
                 .addOnFailureListener { e ->
                     e.printStackTrace()
                 }
                 .addOnCompleteListener {
-                    // CRITICAL: Always close the frame, otherwise CameraX freezes
                     imageProxy.close()
                 }
         } else {

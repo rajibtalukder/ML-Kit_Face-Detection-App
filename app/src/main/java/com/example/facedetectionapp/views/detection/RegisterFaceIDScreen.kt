@@ -59,7 +59,6 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
 
-    // State Tracking for the 3-step pipeline
     var currentStep by remember { mutableStateOf(RegistrationStep.LOOK_CENTER) }
     val capturedEmbeddings = remember { mutableMapOf<String, FloatArray>() }
     var isProcessingFrame by remember { mutableStateOf(false) }
@@ -79,24 +78,19 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                 .fillMaxSize()
                 .background(Color(0xFF121212))
         ) {
-            // Camera frame capture UI
             FaceAttendanceCameraScreen(
                 onFaceProcessed = { face, croppedFaceBitmap ->
-                    // Prevent frame overlapping during ML processing
                     if (!isProcessingFrame && currentStep != RegistrationStep.COMPLETED) {
                         isProcessingFrame = true
 
                         coroutineScope.launch(Dispatchers.Default) {
-                            // 1. Verify face angle matches prompt using ML Kit's Euler angles
                             val isCorrectAngle = verifyFaceAngle(face, currentStep)
 
                             if (isCorrectAngle) {
-                                // 2. Extract biometric embeddings vector
                                 val embedding = faceNetEncoder.getFaceEmbedding(croppedFaceBitmap)
                                 capturedEmbeddings[currentStep.key] = embedding
 
                                 withContext(Dispatchers.Main) {
-                                    // 3. Move state machine forward
                                     currentStep = when (currentStep) {
                                         RegistrationStep.LOOK_CENTER -> RegistrationStep.TURN_LEFT
                                         RegistrationStep.TURN_LEFT -> RegistrationStep.TURN_RIGHT
@@ -106,7 +100,6 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                                 }
                             }
 
-                            // Cool-down to let the user adjust positions
                             kotlinx.coroutines.delay(1200)
                             isProcessingFrame = false
                         }
@@ -114,7 +107,6 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                 }
             )
 
-            // Step Instruction / Overlay Panel
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -149,7 +141,6 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                 }
             }
             var userName by remember { mutableStateOf("") }
-            // Save Action Layout when finished
             if (currentStep == RegistrationStep.COMPLETED) {
                 TextField(
                     value = userName,
@@ -170,7 +161,6 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                             return@Button
                         }
                         coroutineScope.launch(Dispatchers.IO) {
-                            // Transactionally insert User metadata and all 3 embeddings profiles
                             val userId = userDao.insertUser(UserEntity(name = userName))
 
                             capturedEmbeddings.forEach { (pose, vector) ->
@@ -205,16 +195,13 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
     }
 }
 
-/**
- * Validates whether the user's face matches the directed direction instruction
- */
 private fun verifyFaceAngle(face: Face, step: RegistrationStep): Boolean {
-    val headEulerY = face.headEulerAngleY // Left/Right turning angle
+    val headEulerY = face.headEulerAngleY
 
     return when (step) {
         RegistrationStep.LOOK_CENTER -> headEulerY in -12f..12f
-        RegistrationStep.TURN_LEFT -> headEulerY > 18f    // Turned left significantly
-        RegistrationStep.TURN_RIGHT -> headEulerY < -18f   // Turned right significantly
+        RegistrationStep.TURN_LEFT -> headEulerY > 18f
+        RegistrationStep.TURN_RIGHT -> headEulerY < -18f
         else -> false
     }
 }

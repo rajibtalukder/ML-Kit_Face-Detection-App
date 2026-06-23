@@ -79,38 +79,31 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
                 .fillMaxSize()
                 .background(Color(0xFF121212))
         ) {
-            // Live Camera processing system
             FaceAttendanceCameraScreen(
                 onFaceProcessed = { face, croppedFaceBitmap ->
-                    // Guard conditions: don't look up if empty or already calculating a heavy TFLite frame
                     if (!isProcessingFrame && registeredUsersList.isNotEmpty() && verificationStatus == null) {
                         isProcessingFrame = true
 
                         coroutineScope.launch(Dispatchers.Default) {
-                            // Step A: Extract live face embedding features matrix vector
                             val currentLiveEmbedding = faceNetEncoder.getFaceEmbedding(croppedFaceBitmap)
 
-                            // Step B: Calculate nearest match across multi-angle database entries
-                            // Standard recognition threshold for MobileFaceNet is typically between 0.4f and 0.5f
                             val matchedUser = findBestMatch(
                                 liveEmbedding = currentLiveEmbedding,
                                 databaseUsers = registeredUsersList,
-                                maxThreshold = 0.45f
+                                maxThreshold = 0.85f
                             )
 
                             withContext(Dispatchers.Main) {
                                 if (matchedUser != null) {
                                     verificationStatus = true
-                                    statusText = "✅ Access Granted\nWelcome back, ${matchedUser.name}!"
+                                    statusText = "✅ Access Granted\nHey, ${matchedUser.name}! You're authorised"
 
-                                    // Cool down then fire navigate navigation callback actions
                                     delay(2500)
                                     onVerificationSuccess(matchedUser)
                                 } else {
                                     verificationStatus = false
                                     statusText = "❌ Access Denied\nUnknown Face Structure"
 
-                                    // Hold failure display then reset frame listening loops automatically
                                     delay(2000)
                                     verificationStatus = null
                                     statusText = "Look straight at the camera to verify"
@@ -122,7 +115,6 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
                 }
             )
 
-            // Status Display Card Overlay
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -132,9 +124,9 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = when (verificationStatus) {
-                        true -> Color(0xFF1B5E20).copy(alpha = 0.9f)  // Deep Forest Emerald
-                        false -> Color(0xFFB71C1C).copy(alpha = 0.9f) // Deep Crimson Red
-                        null -> Color.Black.copy(alpha = 0.7f)        // Translucent Neutral Grey
+                        true -> Color(0xFF1B5E20).copy(alpha = 0.9f)
+                        false -> Color(0xFFB71C1C).copy(alpha = 0.9f)
+                        null -> Color.Black.copy(alpha = 0.7f)
                     }
                 )
             ) {
@@ -162,14 +154,6 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
     }
 }
 
-// =======================================================
-// CORE MATCHING ENGINE (Math Euclidean Metric Evaluators)
-// =======================================================
-
-/**
- * Loops through all users and their stored multi-angle signatures
- * to find the absolute minimum structural variance.
- */
 private fun findBestMatch(
     liveEmbedding: FloatArray,
     databaseUsers: List<UserWithEmbeddings>,
@@ -179,26 +163,20 @@ private fun findBestMatch(
     var minimumDistanceFound = Float.MAX_VALUE
 
     for (userContainer in databaseUsers) {
-        // Evaluate the live scan frame against every available angle profile (Center, Left, Right)
         for (savedEmbeddingEntity in userContainer.embeddings) {
             val distance = calculateEuclideanDistance(liveEmbedding, savedEmbeddingEntity.faceId)
 
-            // If the calculated distance is closer than anything we've checked so far, track it
+            android.util.Log.d("FaceDB_Match", "Comparing with ${userContainer.user.name} [${savedEmbeddingEntity.poseType}]. Calculated Distance: $distance")
             if (distance < minimumDistanceFound) {
                 minimumDistanceFound = distance
                 bestMatchUser = userContainer.user
             }
         }
     }
-
-    // Ensure our closest structural match is within the secure match verification threshold limit
+    android.util.Log.d("FaceDB_Match", "Absolute Best Match Distance: $minimumDistanceFound (Allowed Limit: $maxThreshold)")
     return if (minimumDistanceFound < maxThreshold) bestMatchUser else null
 }
 
-/**
- * Computes the straight-line vector distance between two spatial feature matrices.
- * Lower means identical profiles; Higher means distinct structural variations.
- */
 private fun calculateEuclideanDistance(vectorA: FloatArray, vectorB: FloatArray): Float {
     if (vectorA.size != vectorB.size) return Float.MAX_VALUE
     var sumOfSquares = 0.0f
