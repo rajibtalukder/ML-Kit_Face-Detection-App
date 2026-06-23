@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EntryScreen(onOpenFaceScreen: ()-> Unit) {
+fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
     Scaffold{ innerPadding ->
         Column(
             modifier = Modifier
@@ -106,7 +106,7 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit) {
 
                 // Primary Authentication Action
                 Button(
-                    onClick = {},
+                    onClick = onOpenVerifyScreen,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(60.dp),
@@ -171,6 +171,6 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit) {
 @Composable
 fun EntryScreenPreview() {
     MaterialTheme {
-        EntryScreen(onOpenFaceScreen = {})
+        EntryScreen(onOpenFaceScreen = {}, onOpenVerifyScreen = {})
     }
 }
