@@ -39,7 +39,8 @@ fun AppNavHost(
             VerifyFaceIDScreen(
                 onVerificationSuccess = {
                     navController.navigate(AppScreen.FaceAttendanceCameraScreen.route)
-                }
+                },
+                onBackPress = { navController.popBackStack() }
             )
         }
         composable(AppScreen.FaceAttendanceCameraScreen.route) {

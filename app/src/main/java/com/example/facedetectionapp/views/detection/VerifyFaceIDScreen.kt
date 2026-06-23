@@ -2,6 +2,7 @@ package com.example.facedetectionapp.views.detection
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -30,32 +31,28 @@ import kotlinx.coroutines.withContext
 import kotlin.math.sqrt
 
 @Composable
-fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
+fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress: () -> Unit) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // 1. Initialize components
     val db = remember { AppDatabase.getDatabase(context) }
     val userDao = remember { db.userFaceDao() }
     val faceNetEncoder = remember { MobileFaceNetEncoder(context) }
 
-    // 2. State Management
     var hasCameraPermission by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
 
-    // Holds the complete snapshot of local DB users & vectors
     var registeredUsersList by remember { mutableStateOf<List<UserWithEmbeddings>>(emptyList()) }
     var isProcessingFrame by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("Initializing scanner...") }
-    var verificationStatus by remember { mutableStateOf<Boolean?>(null) } // true = green, false = red, null = black
+    var verificationStatus by remember { mutableStateOf<Boolean?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = { granted -> hasCameraPermission = granted }
     )
 
-    // 3. Pre-load registered biometrics cleanly from Room
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
             launcher.launch(Manifest.permission.CAMERA)
@@ -81,26 +78,34 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
         ) {
             FaceAttendanceCameraScreen(
                 onFaceProcessed = { face, croppedFaceBitmap ->
+                    Log.d("FaceDB_Match", "Face Processed ----- 1 $face")
                     if (!isProcessingFrame && registeredUsersList.isNotEmpty() && verificationStatus == null) {
                         isProcessingFrame = true
+                        Log.d("FaceDB_Match", "Face Processed ----- 2")
 
                         coroutineScope.launch(Dispatchers.Default) {
                             val currentLiveEmbedding = faceNetEncoder.getFaceEmbedding(croppedFaceBitmap)
+                            Log.d("FaceDB_Match", "Face Processed ----- 3 $currentLiveEmbedding")
 
                             val matchedUser = findBestMatch(
                                 liveEmbedding = currentLiveEmbedding,
+                                liveEulerY = face.headEulerAngleY,  // ← Add this
                                 databaseUsers = registeredUsersList,
-                                maxThreshold = 0.85f
+                                maxThreshold = 0.60f  // ← Also lower threshold
                             )
-
+                            Log.d("FaceDB_Match", "Face Processed ----- 4 ${matchedUser?.name}")
                             withContext(Dispatchers.Main) {
                                 if (matchedUser != null) {
+                                    Log.d("FaceDB_Match", "Face Processed ----- 10.0 Done ✅")
                                     verificationStatus = true
                                     statusText = "✅ Access Granted\nHey, ${matchedUser.name}! You're authorised"
 
                                     delay(2500)
                                     onVerificationSuccess(matchedUser)
+                                    onBackPress()
+
                                 } else {
+                                    Log.d("FaceDB_Match", "Face Processed ----- 10.0 Failed ❌")
                                     verificationStatus = false
                                     statusText = "❌ Access Denied\nUnknown Face Structure"
 
@@ -156,33 +161,90 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit) {
 
 private fun findBestMatch(
     liveEmbedding: FloatArray,
+    liveEulerY: Float,  // ← Add this parameter
     databaseUsers: List<UserWithEmbeddings>,
     maxThreshold: Float
 ): UserEntity? {
+    Log.d("FaceDB_Match", "Face Processed ----- 6")
+    Log.d("FaceDB_Match", "Live Face Angle: eulerY = $liveEulerY")
+
+    // Determine which poses to compare based on live face angle
+    val posesToCompare = determinePosesToCompare(liveEulerY)
+    Log.d("FaceDB_Match", "Will compare against poses: $posesToCompare")
+
     var bestMatchUser: UserEntity? = null
     var minimumDistanceFound = Float.MAX_VALUE
+    var secondMinimumDistanceFound = Float.MAX_VALUE
+
+    Log.d("FaceDB_Match", "Face Processed ----- 6.1")
 
     for (userContainer in databaseUsers) {
-        for (savedEmbeddingEntity in userContainer.embeddings) {
-            val distance = calculateEuclideanDistance(liveEmbedding, savedEmbeddingEntity.faceId)
+        Log.d("FaceDB_Match", "Face Processed ----- 6.2 ${userContainer.user.name}")
 
-            android.util.Log.d("FaceDB_Match", "Comparing with ${userContainer.user.name} [${savedEmbeddingEntity.poseType}]. Calculated Distance: $distance")
+        for (savedEmbeddingEntity in userContainer.embeddings) {
+            // ✅ Only compare against similar poses
+            if (savedEmbeddingEntity.poseType !in posesToCompare) {
+                Log.d("FaceDB_Matching", "Skipping ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] - angle mismatch")
+                continue
+            }
+
+            Log.d("FaceDB_Match", "Face Processed ----- 6.3 ---userId = ${savedEmbeddingEntity.userId} ---faceId = ${savedEmbeddingEntity.faceId}---poseType = ${savedEmbeddingEntity.poseType}")
+
+            val distance = calculateEuclideanDistance(liveEmbedding, savedEmbeddingEntity.faceId)
+            Log.d("FaceDB_Matching", "Comparing with ${userContainer.user.name} [${savedEmbeddingEntity.poseType}]. Calculated Distance: $distance")
+
+            // Track top 2 distances
             if (distance < minimumDistanceFound) {
+                secondMinimumDistanceFound = minimumDistanceFound
                 minimumDistanceFound = distance
                 bestMatchUser = userContainer.user
+            } else if (distance < secondMinimumDistanceFound) {
+                secondMinimumDistanceFound = distance
             }
         }
     }
-    android.util.Log.d("FaceDB_Match", "Absolute Best Match Distance: $minimumDistanceFound (Allowed Limit: $maxThreshold)")
-    return if (minimumDistanceFound < maxThreshold) bestMatchUser else null
+
+    Log.d("FaceDB_Matching", "Absolute Best Match Distance: $minimumDistanceFound (Allowed Limit: $maxThreshold)")
+    Log.d("FaceDB_Matching", "Second Best Match Distance: $secondMinimumDistanceFound")
+
+    val confidenceMargin = secondMinimumDistanceFound - minimumDistanceFound
+    Log.d("FaceDB_Matching", "Margin (Gap between top-1 and top-2): $confidenceMargin")
+
+    val marginThreshold = 0.05f
+
+    return if (minimumDistanceFound < maxThreshold && confidenceMargin >= marginThreshold) {
+        Log.d("FaceDB_Matching", "✅ CONFIDENT MATCH: ${bestMatchUser?.name}")
+        bestMatchUser
+    } else if (minimumDistanceFound >= maxThreshold) {
+        Log.d("FaceDB_Matching", "❌ REJECTED: Best match ($minimumDistanceFound) exceeds threshold ($maxThreshold)")
+        null
+    } else {
+        Log.d("FaceDB_Matching", "⚠️ UNCERTAIN: Margin too small ($confidenceMargin < $marginThreshold)")
+        null
+    }
+}
+
+// Determine which stored poses to compare based on live face angle
+private fun determinePosesToCompare(eulerY: Float): List<String> {
+    return when {
+        kotlin.math.abs(eulerY) <= 15f -> listOf("CENTER")  // Near frontal
+        eulerY in -35f..-10f -> listOf("LEFT")               // Looking left
+        eulerY in 10f..35f -> listOf("RIGHT")                // Looking right
+        else -> {
+            Log.w("FaceDB_Match", "Face angle $eulerY is too extreme, will not match")
+            emptyList()  // Reject extreme angles
+        }
+    }
 }
 
 private fun calculateEuclideanDistance(vectorA: FloatArray, vectorB: FloatArray): Float {
+    Log.d("FaceDB_Match", "Face Processed ----- 6.4")
     if (vectorA.size != vectorB.size) return Float.MAX_VALUE
     var sumOfSquares = 0.0f
     for (i in vectorA.indices) {
         val delta = vectorA[i] - vectorB[i]
         sumOfSquares += delta * delta
     }
+    Log.d("FaceDB_Match", "Face Processed ----- 6.6 ${sqrt(sumOfSquares)}")
     return sqrt(sumOfSquares)
 }

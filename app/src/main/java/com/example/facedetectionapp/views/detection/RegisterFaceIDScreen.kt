@@ -164,11 +164,13 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                             val userId = userDao.insertUser(UserEntity(name = userName))
 
                             capturedEmbeddings.forEach { (pose, vector) ->
+                                val normalizedVector = normalizeEmbedding(vector)
+
                                 userDao.insertEmbedding(
                                     FaceEmbeddingEntity(
                                         userId = userId.toInt(),
                                         poseType = pose,
-                                        faceId = vector
+                                        faceId = normalizedVector  // Store normalized
                                     )
                                 )
                             }
@@ -176,7 +178,6 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                             withContext(Dispatchers.Main) {
                                 onRegistrationComplete()
                                 Toast.makeText(context, "Successfully Registered Face", Toast.LENGTH_SHORT).show()
-
                             }
                         }
                     },
@@ -194,7 +195,15 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
         }
     }
 }
-
+// Add this helper function
+private fun normalizeEmbedding(embedding: FloatArray): FloatArray {
+    val norm = kotlin.math.sqrt(embedding.sumOf { (it * it).toDouble() }.toFloat())
+    return if (norm > 0f) {
+        embedding.map { it / norm }.toFloatArray()
+    } else {
+        embedding
+    }
+}
 private fun verifyFaceAngle(face: Face, step: RegistrationStep): Boolean {
     val headEulerY = face.headEulerAngleY
 
