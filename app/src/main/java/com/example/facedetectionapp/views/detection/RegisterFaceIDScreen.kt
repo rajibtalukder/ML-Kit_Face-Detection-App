@@ -3,6 +3,7 @@ package com.example.facedetectionapp.views.detection
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -12,7 +13,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -143,14 +148,30 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                     )
                 }
             }
-
+            var userName by remember { mutableStateOf("") }
             // Save Action Layout when finished
+            if (currentStep == RegistrationStep.COMPLETED) {
+                TextField(
+                    value = userName,
+                    onValueChange = { userName = it },
+                    label = { Text("Enter Your Name") },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                        .fillMaxWidth(0.8f),
+                    colors = TextFieldDefaults.colors(focusedContainerColor = Color.White,unfocusedContainerColor = Color.White)
+                )
+            }
             if (currentStep == RegistrationStep.COMPLETED) {
                 Button(
                     onClick = {
+                        if(userName.isEmpty()){
+                            Toast.makeText(context, "Please enter a name", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
                         coroutineScope.launch(Dispatchers.IO) {
                             // Transactionally insert User metadata and all 3 embeddings profiles
-                            val userId = userDao.insertUser(UserEntity(name = "John Doe"))
+                            val userId = userDao.insertUser(UserEntity(name = userName))
 
                             capturedEmbeddings.forEach { (pose, vector) ->
                                 userDao.insertEmbedding(
@@ -164,17 +185,21 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
 
                             withContext(Dispatchers.Main) {
                                 onRegistrationComplete()
+                                Toast.makeText(context, "Successfully Registered Face", Toast.LENGTH_SHORT).show()
+
                             }
                         }
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 48.dp)
+                        .padding(bottom = 40.dp)
                         .fillMaxWidth(0.8f),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                 ) {
                     Text("Save Biometric Profile", color = Color.White, fontSize = 16.sp)
                 }
+
+
             }
         }
     }
