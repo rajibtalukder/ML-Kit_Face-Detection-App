@@ -26,7 +26,7 @@ fun AppNavHost(
         }
         composable(AppScreen.RegisterFaceIDScreen.route) {
             RegisterFaceIDScreen(
-                onOpenFaceAttendanceCameraScreen = {
+                onRegistrationComplete = {
                     navController.navigate(AppScreen.FaceAttendanceCameraScreen.route)
                 }
             )

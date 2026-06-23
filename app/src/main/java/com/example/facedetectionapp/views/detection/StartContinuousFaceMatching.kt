@@ -25,25 +25,25 @@ suspend fun startContinuousFaceMatching(
             continue
         }
 
-        val savedProfiles = userDao.getAllRegisteredFaces()
-        if (savedProfiles.isEmpty()) {
-            onResult("Database Empty", 1.0f)
-            return
-        }
+//        val savedProfiles = userDao.getAllRegisteredFaces()
+//        if (savedProfiles.isEmpty()) {
+//            onResult("Database Empty", 1.0f)
+//            return
+//        }
 
         val currentEmbedding = faceNetEncoder.getFaceEmbedding(currentBitmap)
 
         var matchedUserName = "Unknown Person"
         var lowestDistance = 0.40f // Strict MobileFaceNet Euclidean ceiling limit
 
-        // 3. Matrix comparison loop
-        for (profile in savedProfiles) {
-            val distance = calculateEuclideanDistance(currentEmbedding, profile.faceId)
-            if (distance < lowestDistance) {
-                lowestDistance = distance
-                matchedUserName = profile.name
-            }
-        }
+//        // 3. Matrix comparison loop
+//        for (profile in savedProfiles) {
+//            val distance = calculateEuclideanDistance(currentEmbedding, profile.faceId)
+//            if (distance < lowestDistance) {
+//                lowestDistance = distance
+//                matchedUserName = profile.name
+//            }
+//        }
 
         if (matchedUserName != "Unknown Person") {
             // Success! Break out of the infinite retry mechanism loop
