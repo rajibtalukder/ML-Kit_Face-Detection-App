@@ -6,16 +6,23 @@ import android.graphics.Bitmap
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,7 +36,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.sqrt
+
+// Number of frames to buffer and average before making a match decision
+private const val FRAMES_TO_COLLECT = 5
 
 @Composable
 fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress: () -> Unit) {
@@ -45,9 +54,14 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
     }
 
     var registeredUsersList by remember { mutableStateOf<List<UserWithEmbeddings>>(emptyList()) }
-    var isProcessingFrame by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("Initializing scanner...") }
     var verificationStatus by remember { mutableStateOf<Boolean?>(null) }
+    var lastCroppedFace by remember { mutableStateOf<Bitmap?>(null) }
+
+    // Multi-frame buffer: collect several embeddings and average them for stable matching
+    val embeddingBuffer = remember { mutableListOf<FloatArray>() }
+    var isMatchingActive by remember { mutableStateOf(false) } // True = actively matching (don't collect new frames)
+    var framesCollected by remember { mutableStateOf(0) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -67,7 +81,7 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
         statusText = if (registeredUsersList.isEmpty()) {
             "⚠️ No registered faces found. Please register first!"
         } else {
-            "Look straight at the camera to verify"
+            "Position your face in the frame"
         }
     }
 
@@ -78,64 +92,78 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
                 .background(Color(0xFF121212))
         ) {
             FaceAttendanceCameraScreen(
-                onFaceProcessed = { face, croppedFaceBitmap ->
-                    Log.d("FaceDB_Match", "Face Processed ----- 1 $face")
-                    if (!isProcessingFrame && registeredUsersList.isNotEmpty() && verificationStatus == null) {
-                        isProcessingFrame = true
-                        Log.d("FaceDB_Match", "Face Processed ----- 2")
+                onFaceProcessed = { _, croppedFaceBitmap ->
+                    // Don't collect frames while a match decision is being computed
+                    if (isMatchingActive || registeredUsersList.isEmpty() || verificationStatus != null) return@FaceAttendanceCameraScreen
 
-                        coroutineScope.launch(Dispatchers.Default) {
-                            var embedding: FloatArray? = null
+                    coroutineScope.launch(Dispatchers.Default) {
+                        try {
+                            val scaledFaceBitmap = Bitmap.createScaledBitmap(croppedFaceBitmap, 112, 112, true)
+                            lastCroppedFace = scaledFaceBitmap
 
-                            try {
-                                // The croppedFaceBitmap is already cropped to the face bounding box and rotated upright.
-                                val scaledFaceBitmap = Bitmap.createScaledBitmap(croppedFaceBitmap, 112, 112, true)
+                            val embedding = faceNetEncoder.getFaceEmbedding(scaledFaceBitmap)
 
-                                // Generate the embedding vector
-                                embedding = faceNetEncoder.getFaceEmbedding(scaledFaceBitmap)
-                            } catch (e: Exception) {
-                                Log.e("FaceDetection", "Bitmap operations failed", e)
+                            synchronized(embeddingBuffer) {
+                                embeddingBuffer.add(embedding)
                             }
 
-                            Log.d("FaceDB_Match", "Face Processed ----- 3 $embedding")
+                            val currentCount = synchronized(embeddingBuffer) { embeddingBuffer.size }
+                            withContext(Dispatchers.Main) {
+                                framesCollected = currentCount
+                                statusText = "Scanning... ($currentCount/$FRAMES_TO_COLLECT frames)"
+                            }
 
-                            // Only proceed if we successfully generated a valid embedding array
-                            if (embedding != null) {
-                                val matchedUser = findBestMatch(
-                                    liveEmbedding = embedding,
+                            // Once we have collected enough frames, average them and match
+                            if (currentCount >= FRAMES_TO_COLLECT) {
+                                isMatchingActive = true
+
+                                val bufferedEmbeddings = synchronized(embeddingBuffer) {
+                                    embeddingBuffer.toList().also { embeddingBuffer.clear() }
+                                }
+
+                                // Average all collected embeddings into one stable embedding vector
+                                val averagedEmbedding = averageEmbeddings(bufferedEmbeddings)
+
+                                val (matchedUser, highestSimilarity) = findBestMatch(
+                                    liveEmbedding = averagedEmbedding,
                                     databaseUsers = registeredUsersList,
-                                    minSimilarityThreshold = 0.80f // Reasonable cosine similarity threshold
+                                    minSimilarityThreshold = 0.65f // Threshold for averaged/stable embeddings
                                 )
 
                                 withContext(Dispatchers.Main) {
+                                    framesCollected = 0
                                     if (matchedUser != null) {
-                                        Log.d("FaceDB_Match", "🎯 Verified Successfully: ${matchedUser.name}")
+                                        Log.d("FaceDB_Match", "🎯 Verified: ${matchedUser.name} | Score: $highestSimilarity")
                                         verificationStatus = true
-                                        statusText = "✅ Access Granted\nWelcome, ${matchedUser.name}!"
-
-                                        delay(2000)
-                                        onVerificationSuccess(matchedUser)
-                                    } else {
-                                        Log.d("FaceDB_Match", "❌ Face matches no local profiles.")
-                                        verificationStatus = false
-                                        statusText = "❌ Access Denied\nUnknown Face Structure"
+                                        statusText = "✅ Welcome, ${matchedUser.name}!\n(Match: ${(highestSimilarity * 100).toInt()}%)"
 
                                         delay(1500)
-                                        verificationStatus = null // Reset status so it can try scanning again
+                                        onVerificationSuccess(matchedUser)
+                                        isMatchingActive = false
+                                    } else {
+                                        Log.d("FaceDB_Match", "❌ No match. Best: $highestSimilarity")
+                                        verificationStatus = null
+                                        statusText = "❌ Not Recognized (${(highestSimilarity * 100).toInt()}%)\nTry again — look straight at the camera"
+
+                                        delay(1200)
+                                        statusText = "Position your face in the frame"
+                                        isMatchingActive = false
                                     }
-                                    isProcessingFrame = false
                                 }
-                            } else {
-                                // Fallback reset if calculation failed entirely
-                                withContext(Dispatchers.Main) {
-                                    isProcessingFrame = false
-                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("FaceDetection", "Embedding extraction failed", e)
+                            synchronized(embeddingBuffer) { embeddingBuffer.clear() }
+                            withContext(Dispatchers.Main) {
+                                framesCollected = 0
+                                isMatchingActive = false
                             }
                         }
                     }
                 }
             )
 
+            // Status card at top
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -147,26 +175,70 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
                     containerColor = when (verificationStatus) {
                         true -> Color(0xFF1B5E20).copy(alpha = 0.9f)
                         false -> Color(0xFFB71C1C).copy(alpha = 0.9f)
-                        null -> Color.Black.copy(alpha = 0.7f)
+                        null -> Color.Black.copy(alpha = 0.75f)
                     }
                 )
             ) {
-                Text(
-                    text = statusText,
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
-                )
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = statusText,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Show frame collection progress bar only while actively collecting frames
+                    if (verificationStatus == null && registeredUsersList.isNotEmpty() && framesCollected > 0) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { framesCollected.toFloat() / FRAMES_TO_COLLECT.toFloat() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp),
+                            color = Color(0xFF00E676),
+                            trackColor = Color.White.copy(alpha = 0.2f),
+                            strokeCap = StrokeCap.Round
+                        )
+                        Text(
+                            text = "Capturing frames to improve accuracy...",
+                            color = Color.White.copy(alpha = 0.7f),
+                            fontSize = 11.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            }
+
+            // Cropped face thumbnail at the bottom
+            if (lastCroppedFace != null) {
+                Card(
+                    modifier = Modifier
+                        .size(110.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 60.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(2.dp, if (verificationStatus == true) Color(0xFF00E676) else Color.White.copy(alpha = 0.3f))
+                ) {
+                    Image(
+                        bitmap = lastCroppedFace!!.asImageBitmap(),
+                        contentDescription = "Cropped Face Preview",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     } else {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                text = "Camera access permissions are strictly mandatory for biometric matching execution workflows.",
+                text = "Camera permission is required for face verification.",
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(32.dp),
                 color = Color.Gray
@@ -175,20 +247,41 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
     }
 }
 
+/**
+ * Averages multiple embedding vectors element-wise into a single stable embedding,
+ * then re-normalizes the result to unit length.
+ */
+private fun averageEmbeddings(embeddings: List<FloatArray>): FloatArray {
+    if (embeddings.isEmpty()) return FloatArray(192)
+    val size = embeddings[0].size
+    val averaged = FloatArray(size)
+    for (emb in embeddings) {
+        for (i in emb.indices) {
+            averaged[i] += emb[i]
+        }
+    }
+    for (i in averaged.indices) {
+        averaged[i] /= embeddings.size.toFloat()
+    }
+    // Re-normalize the averaged embedding to unit length
+    val norm = kotlin.math.sqrt(averaged.sumOf { (it * it).toDouble() }.toFloat())
+    return if (norm > 0f) averaged.map { it / norm }.toFloatArray() else averaged
+}
+
 private fun findBestMatch(
     liveEmbedding: FloatArray,
     databaseUsers: List<UserWithEmbeddings>,
     minSimilarityThreshold: Float
-): UserEntity? {
+): Pair<UserEntity?, Float> {
     var bestMatchUser: UserEntity? = null
     var highestSimilarityFound = -1.0f
 
-    Log.d("FaceDB_Match", "⚡ Starting Cosine Similarity Scan across ${databaseUsers.size} profiles...")
+    Log.d("FaceDB_Match", "⚡ Scanning ${databaseUsers.size} profiles with averaged embedding...")
 
     for (userContainer in databaseUsers) {
         for (savedEmbeddingEntity in userContainer.embeddings) {
             val similarity = calculateCosineSimilarity(liveEmbedding, savedEmbeddingEntity.faceId)
-            Log.d("FaceDB_Match", "👤 User: ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] -> Match Score: ${(similarity * 100).toInt()}% ($similarity)")
+            Log.d("FaceDB_Match", "👤 ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] -> ${(similarity * 100).toInt()}%")
 
             if (similarity > highestSimilarityFound) {
                 highestSimilarityFound = similarity
@@ -197,14 +290,13 @@ private fun findBestMatch(
         }
     }
 
-    Log.d("FaceDB_Match", "📊 Scan Done. Highest similarity found: ${(highestSimilarityFound * 100).toInt()}% (Required: ${(minSimilarityThreshold * 100).toInt()}%)")
-
-    return if (highestSimilarityFound >= minSimilarityThreshold) bestMatchUser else null
+    Log.d("FaceDB_Match", "📊 Best: ${(highestSimilarityFound * 100).toInt()}% (threshold: ${(minSimilarityThreshold * 100).toInt()}%)")
+    val matched = if (highestSimilarityFound >= minSimilarityThreshold) bestMatchUser else null
+    return Pair(matched, highestSimilarityFound)
 }
 
 /**
- * Computes the angular similarity between two feature arrays.
- * Handles internal vector normalization on-the-fly to guarantee reliable output scales.
+ * Computes cosine similarity between two L2-normalized embedding vectors.
  */
 private fun calculateCosineSimilarity(vectorA: FloatArray, vectorB: FloatArray): Float {
     if (vectorA.size != vectorB.size) return 0.0f

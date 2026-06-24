@@ -11,6 +11,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -64,6 +67,7 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
     var currentStep by remember { mutableStateOf(RegistrationStep.LOOK_CENTER) }
     val capturedEmbeddings = remember { mutableMapOf<String, FloatArray>() }
     var isProcessingFrame by remember { mutableStateOf(false) }
+    var lastCroppedFace by remember { mutableStateOf<Bitmap?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
@@ -92,6 +96,7 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                                 try {
                                     // The croppedFaceBitmap is already cropped to the face bounding box and rotated upright.
                                     val scaledFaceBitmap = Bitmap.createScaledBitmap(croppedFaceBitmap, 112, 112, true)
+                                    lastCroppedFace = scaledFaceBitmap
 
                                     // Generate the face embedding vector safely
                                     val embedding = faceNetEncoder.getFaceEmbedding(scaledFaceBitmap)
@@ -202,6 +207,23 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                 }
 
 
+            }
+
+            if (lastCroppedFace != null) {
+                Card(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 180.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                ) {
+                    Image(
+                        bitmap = lastCroppedFace!!.asImageBitmap(),
+                        contentDescription = "Cropped Face Preview",
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }
