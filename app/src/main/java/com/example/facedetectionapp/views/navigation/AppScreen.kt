@@ -5,4 +5,5 @@ sealed class AppScreen(val route : String) {
     data object RegisterFaceIDScreen : AppScreen("registerFaceIDScreen")
     data object VerifyFaceIDScreen : AppScreen("verifyFaceIDScreen")
     data object FaceAttendanceCameraScreen : AppScreen("faceAttendanceCameraScreen")
+    data object UserManagementScreen : AppScreen("userManagementScreen")
 }

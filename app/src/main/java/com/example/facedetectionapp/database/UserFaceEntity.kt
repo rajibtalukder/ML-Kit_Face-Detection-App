@@ -66,6 +66,8 @@ interface UserFaceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEmbedding(embedding: FaceEmbeddingEntity)
 
+    @Delete
+    suspend fun deleteUser(user: UserEntity)
 
     @Transaction
     suspend fun registerFullBiometricProfile(userName: String, embeddingsMap: Map<String, FloatArray>) {

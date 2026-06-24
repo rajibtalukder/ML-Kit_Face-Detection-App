@@ -1,8 +1,12 @@
 package com.example.facedetectionapp.views.detection
 
 import android.graphics.*
+import android.media.Image
+import android.util.Log
 import android.util.Size
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -27,9 +31,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.Face
+import com.google.mlkit.vision.face.FaceDetection
+import com.google.mlkit.vision.face.FaceDetectorOptions
+import com.google.android.gms.tasks.Tasks
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun FaceAttendanceCameraScreen(
     onFaceProcessed: (Face, Bitmap) -> Unit
@@ -64,33 +72,52 @@ fun FaceAttendanceCameraScreen(
                     val preview = Preview.Builder().build().also {
                         it.surfaceProvider = previewView.surfaceProvider
                     }
+                    Log.d("FaceDB_Match", "Face Processed ----- 100")
+                    // 1. Configure high-speed, low-latency face detection options
+                    val highAccuracyOpts = FaceDetectorOptions.Builder()
+                        .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST) // Optimized for live video frames
+                        .setLandmarkMode(FaceDetectorOptions.LANDMARK_MODE_NONE)
+                        .setClassificationMode(FaceDetectorOptions.CLASSIFICATION_MODE_NONE)
+                        .setContourMode(FaceDetectorOptions.CONTOUR_MODE_NONE)
+                        .build()
+                    Log.d("FaceDB_Match", "Face Processed ----- 101")
+                    val faceDetector = FaceDetection.getClient(highAccuracyOpts)
 
                     val imageAnalysis = ImageAnalysis.Builder()
                         .setTargetResolution(Size(1280, 720))
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
+                    Log.d("FaceDB_Match", "Face Processed ----- 102")
+                    // 3. Attach the analyzer to process your upright camera frames in background
+                    imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                        Log.d("FaceDB_Match", "Face Processed ----- 103")
+                        val mediaImage: Image? = imageProxy.image
+                        if (mediaImage != null) {
+                            Log.d("FaceDB_Match", "Face Processed ----- 104")
+                            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                            val inputImage = InputImage.fromMediaImage(mediaImage, rotationDegrees)
 
-                    imageAnalysis.setAnalyzer(
-                        cameraExecutor,
-                        FaceAnalyzer { faces, inputImage ->
                             try {
-                                if (faces.isNotEmpty()) {
-                                    val primaryFace = faces.first()
-                                    val fullFrameBitmap = inputImage.toBitmap()
+                                val faces = Tasks.await(faceDetector.process(inputImage))
+                                val face = faces.firstOrNull()
+                                if (face != null) {
+                                    val fullFrameBitmap = imageProxy.toBitmap()
+                                    val croppedFace = cropFaceSafely(fullFrameBitmap, face.boundingBox)
 
-                                    if (fullFrameBitmap != null) {
-                                        val croppedFace = cropToFace(fullFrameBitmap, primaryFace.boundingBox)
-
-                                        if (croppedFace != null) {
-                                            onFaceProcessed(primaryFace, croppedFace)
-                                        }
+                                    if (croppedFace != null) {
+                                        val uprightFaceBitmap = rotateBitmap(croppedFace, rotationDegrees.toFloat())
+                                        onFaceProcessed(face, uprightFaceBitmap)
                                     }
                                 }
                             } catch (e: Exception) {
-                                e.printStackTrace()
+                                Log.e("CameraAnalyzer", "ML Kit Face detection failed", e)
+                            } finally {
+                                imageProxy.close()
                             }
+                        } else {
+                            imageProxy.close()
                         }
-                    )
+                    }
 
                     val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
@@ -110,23 +137,27 @@ fun FaceAttendanceCameraScreen(
         }
     }
 }
+fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+    if (degrees == 0f) return bitmap
+    val matrix = Matrix().apply { postRotate(degrees) }
+    return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+}
 
-fun cropToFace(bitmap: Bitmap, boundingBox: Rect): Bitmap? {
-    return try {
-        val left = boundingBox.left.coerceAtLeast(0)
-        val top = boundingBox.top.coerceAtLeast(0)
-        val width = boundingBox.width().coerceAtMost(bitmap.width - left)
-        val height = boundingBox.height().coerceAtMost(bitmap.height - top)
+/**
+ * Crops the face out of the full camera frame, adding strict validation boundaries
+ * to guarantee it never crashes the app if the face hits the edge of the screen layout.
+ */
+fun cropFaceSafely(src: Bitmap, rect: Rect): Bitmap? {
+    val left = rect.left.coerceAtLeast(0)
+    val top = rect.top.coerceAtLeast(0)
+    val right = rect.right.coerceAtMost(src.width)
+    val bottom = rect.bottom.coerceAtMost(src.height)
 
-        if (width <= 0 || height <= 0) return null
+    val width = right - left
+    val height = bottom - top
 
-        val croppedBitmap = Bitmap.createBitmap(bitmap, left, top, width, height)
-
-        Bitmap.createScaledBitmap(croppedBitmap, 112, 112, true)
-    } catch (e: Exception) {
-        e.printStackTrace()
-        null
-    }
+    if (width <= 0 || height <= 0) return null
+    return Bitmap.createBitmap(src, left, top, width, height)
 }
 
 fun InputImage.toBitmap(): Bitmap? {

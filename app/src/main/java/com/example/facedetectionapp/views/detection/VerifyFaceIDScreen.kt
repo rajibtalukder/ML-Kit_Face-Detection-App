@@ -2,6 +2,7 @@ package com.example.facedetectionapp.views.detection
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -84,36 +85,51 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
                         Log.d("FaceDB_Match", "Face Processed ----- 2")
 
                         coroutineScope.launch(Dispatchers.Default) {
-                            val currentLiveEmbedding = faceNetEncoder.getFaceEmbedding(croppedFaceBitmap)
-                            Log.d("FaceDB_Match", "Face Processed ----- 3 $currentLiveEmbedding")
+                            var embedding: FloatArray? = null
 
-                            val matchedUser = findBestMatch(
-                                liveEmbedding = currentLiveEmbedding,
-                                liveEulerY = face.headEulerAngleY,  // ← Add this
-                                databaseUsers = registeredUsersList,
-                                maxThreshold = 0.60f  // ← Also lower threshold
-                            )
-                            Log.d("FaceDB_Match", "Face Processed ----- 4 ${matchedUser?.name}")
-                            withContext(Dispatchers.Main) {
-                                if (matchedUser != null) {
-                                    Log.d("FaceDB_Match", "Face Processed ----- 10.0 Done ✅")
-                                    verificationStatus = true
-                                    statusText = "✅ Access Granted\nHey, ${matchedUser.name}! You're authorised"
+                            try {
+                                // The croppedFaceBitmap is already cropped to the face bounding box and rotated upright.
+                                val scaledFaceBitmap = Bitmap.createScaledBitmap(croppedFaceBitmap, 112, 112, true)
 
-                                    delay(2500)
-                                    onVerificationSuccess(matchedUser)
-                                    onBackPress()
+                                // Generate the embedding vector
+                                embedding = faceNetEncoder.getFaceEmbedding(scaledFaceBitmap)
+                            } catch (e: Exception) {
+                                Log.e("FaceDetection", "Bitmap operations failed", e)
+                            }
 
-                                } else {
-                                    Log.d("FaceDB_Match", "Face Processed ----- 10.0 Failed ❌")
-                                    verificationStatus = false
-                                    statusText = "❌ Access Denied\nUnknown Face Structure"
+                            Log.d("FaceDB_Match", "Face Processed ----- 3 $embedding")
 
-                                    delay(2000)
-                                    verificationStatus = null
-                                    statusText = "Look straight at the camera to verify"
+                            // Only proceed if we successfully generated a valid embedding array
+                            if (embedding != null) {
+                                val matchedUser = findBestMatch(
+                                    liveEmbedding = embedding,
+                                    databaseUsers = registeredUsersList,
+                                    minSimilarityThreshold = 0.80f // Reasonable cosine similarity threshold
+                                )
+
+                                withContext(Dispatchers.Main) {
+                                    if (matchedUser != null) {
+                                        Log.d("FaceDB_Match", "🎯 Verified Successfully: ${matchedUser.name}")
+                                        verificationStatus = true
+                                        statusText = "✅ Access Granted\nWelcome, ${matchedUser.name}!"
+
+                                        delay(2000)
+                                        onVerificationSuccess(matchedUser)
+                                    } else {
+                                        Log.d("FaceDB_Match", "❌ Face matches no local profiles.")
+                                        verificationStatus = false
+                                        statusText = "❌ Access Denied\nUnknown Face Structure"
+
+                                        delay(1500)
+                                        verificationStatus = null // Reset status so it can try scanning again
+                                    }
+                                    isProcessingFrame = false
                                 }
-                                isProcessingFrame = false
+                            } else {
+                                // Fallback reset if calculation failed entirely
+                                withContext(Dispatchers.Main) {
+                                    isProcessingFrame = false
+                                }
                             }
                         }
                     }
@@ -161,90 +177,48 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
 
 private fun findBestMatch(
     liveEmbedding: FloatArray,
-    liveEulerY: Float,  // ← Add this parameter
     databaseUsers: List<UserWithEmbeddings>,
-    maxThreshold: Float
+    minSimilarityThreshold: Float
 ): UserEntity? {
-    Log.d("FaceDB_Match", "Face Processed ----- 6")
-    Log.d("FaceDB_Match", "Live Face Angle: eulerY = $liveEulerY")
-
-    // Determine which poses to compare based on live face angle
-    val posesToCompare = determinePosesToCompare(liveEulerY)
-    Log.d("FaceDB_Match", "Will compare against poses: $posesToCompare")
-
     var bestMatchUser: UserEntity? = null
-    var minimumDistanceFound = Float.MAX_VALUE
-    var secondMinimumDistanceFound = Float.MAX_VALUE
+    var highestSimilarityFound = -1.0f
 
-    Log.d("FaceDB_Match", "Face Processed ----- 6.1")
+    Log.d("FaceDB_Match", "⚡ Starting Cosine Similarity Scan across ${databaseUsers.size} profiles...")
 
     for (userContainer in databaseUsers) {
-        Log.d("FaceDB_Match", "Face Processed ----- 6.2 ${userContainer.user.name}")
-
         for (savedEmbeddingEntity in userContainer.embeddings) {
-            // ✅ Only compare against similar poses
-            if (savedEmbeddingEntity.poseType !in posesToCompare) {
-                Log.d("FaceDB_Matching", "Skipping ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] - angle mismatch")
-                continue
-            }
+            val similarity = calculateCosineSimilarity(liveEmbedding, savedEmbeddingEntity.faceId)
+            Log.d("FaceDB_Match", "👤 User: ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] -> Match Score: ${(similarity * 100).toInt()}% ($similarity)")
 
-            Log.d("FaceDB_Match", "Face Processed ----- 6.3 ---userId = ${savedEmbeddingEntity.userId} ---faceId = ${savedEmbeddingEntity.faceId}---poseType = ${savedEmbeddingEntity.poseType}")
-
-            val distance = calculateEuclideanDistance(liveEmbedding, savedEmbeddingEntity.faceId)
-            Log.d("FaceDB_Matching", "Comparing with ${userContainer.user.name} [${savedEmbeddingEntity.poseType}]. Calculated Distance: $distance")
-
-            // Track top 2 distances
-            if (distance < minimumDistanceFound) {
-                secondMinimumDistanceFound = minimumDistanceFound
-                minimumDistanceFound = distance
+            if (similarity > highestSimilarityFound) {
+                highestSimilarityFound = similarity
                 bestMatchUser = userContainer.user
-            } else if (distance < secondMinimumDistanceFound) {
-                secondMinimumDistanceFound = distance
             }
         }
     }
 
-    Log.d("FaceDB_Matching", "Absolute Best Match Distance: $minimumDistanceFound (Allowed Limit: $maxThreshold)")
-    Log.d("FaceDB_Matching", "Second Best Match Distance: $secondMinimumDistanceFound")
+    Log.d("FaceDB_Match", "📊 Scan Done. Highest similarity found: ${(highestSimilarityFound * 100).toInt()}% (Required: ${(minSimilarityThreshold * 100).toInt()}%)")
 
-    val confidenceMargin = secondMinimumDistanceFound - minimumDistanceFound
-    Log.d("FaceDB_Matching", "Margin (Gap between top-1 and top-2): $confidenceMargin")
-
-    val marginThreshold = 0.05f
-
-    return if (minimumDistanceFound < maxThreshold && confidenceMargin >= marginThreshold) {
-        Log.d("FaceDB_Matching", "✅ CONFIDENT MATCH: ${bestMatchUser?.name}")
-        bestMatchUser
-    } else if (minimumDistanceFound >= maxThreshold) {
-        Log.d("FaceDB_Matching", "❌ REJECTED: Best match ($minimumDistanceFound) exceeds threshold ($maxThreshold)")
-        null
-    } else {
-        Log.d("FaceDB_Matching", "⚠️ UNCERTAIN: Margin too small ($confidenceMargin < $marginThreshold)")
-        null
-    }
+    return if (highestSimilarityFound >= minSimilarityThreshold) bestMatchUser else null
 }
 
-// Determine which stored poses to compare based on live face angle
-private fun determinePosesToCompare(eulerY: Float): List<String> {
-    return when {
-        kotlin.math.abs(eulerY) <= 15f -> listOf("CENTER")  // Near frontal
-        eulerY in -35f..-10f -> listOf("LEFT")               // Looking left
-        eulerY in 10f..35f -> listOf("RIGHT")                // Looking right
-        else -> {
-            Log.w("FaceDB_Match", "Face angle $eulerY is too extreme, will not match")
-            emptyList()  // Reject extreme angles
-        }
-    }
-}
+/**
+ * Computes the angular similarity between two feature arrays.
+ * Handles internal vector normalization on-the-fly to guarantee reliable output scales.
+ */
+private fun calculateCosineSimilarity(vectorA: FloatArray, vectorB: FloatArray): Float {
+    if (vectorA.size != vectorB.size) return 0.0f
 
-private fun calculateEuclideanDistance(vectorA: FloatArray, vectorB: FloatArray): Float {
-    Log.d("FaceDB_Match", "Face Processed ----- 6.4")
-    if (vectorA.size != vectorB.size) return Float.MAX_VALUE
-    var sumOfSquares = 0.0f
+    var dotProduct = 0.0f
+    var normA = 0.0f
+    var normB = 0.0f
+
     for (i in vectorA.indices) {
-        val delta = vectorA[i] - vectorB[i]
-        sumOfSquares += delta * delta
+        dotProduct += vectorA[i] * vectorB[i]
+        normA += vectorA[i] * vectorA[i]
+        normB += vectorB[i] * vectorB[i]
     }
-    Log.d("FaceDB_Match", "Face Processed ----- 6.6 ${sqrt(sumOfSquares)}")
-    return sqrt(sumOfSquares)
+
+    val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
+    return if (denominator.toDouble() == 0.0) 0.0f else (dotProduct / denominator)
 }

@@ -19,9 +19,15 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import androidx.compose.material.icons.filled.People
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
+fun EntryScreen(
+    onOpenFaceScreen: () -> Unit,
+    onOpenVerifyScreen: () -> Unit,
+    onOpenManagementScreen: () -> Unit
+) {
     Scaffold{ innerPadding ->
         Column(
             modifier = Modifier
@@ -159,6 +165,31 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
                         )
                     }
                 }
+
+                FilledTonalButton(
+                    onClick = onOpenManagementScreen,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.People,
+                            contentDescription = "Manage Employees",
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Manage Employees",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
         }
     }
@@ -168,6 +199,6 @@ fun EntryScreen(onOpenFaceScreen: ()-> Unit, onOpenVerifyScreen: ()-> Unit) {
 @Composable
 fun EntryScreenPreview() {
     MaterialTheme {
-        EntryScreen(onOpenFaceScreen = {}, onOpenVerifyScreen = {})
+        EntryScreen(onOpenFaceScreen = {}, onOpenVerifyScreen = {}, onOpenManagementScreen = {})
     }
 }

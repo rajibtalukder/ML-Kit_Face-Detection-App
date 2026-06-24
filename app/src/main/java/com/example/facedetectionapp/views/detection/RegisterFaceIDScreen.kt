@@ -3,6 +3,8 @@ package com.example.facedetectionapp.views.detection
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -87,19 +89,28 @@ fun RegisterFaceIDScreen(onRegistrationComplete: () -> Unit) {
                             val isCorrectAngle = verifyFaceAngle(face, currentStep)
 
                             if (isCorrectAngle) {
-                                val embedding = faceNetEncoder.getFaceEmbedding(croppedFaceBitmap)
-                                capturedEmbeddings[currentStep.key] = embedding
+                                try {
+                                    // The croppedFaceBitmap is already cropped to the face bounding box and rotated upright.
+                                    val scaledFaceBitmap = Bitmap.createScaledBitmap(croppedFaceBitmap, 112, 112, true)
 
-                                withContext(Dispatchers.Main) {
-                                    currentStep = when (currentStep) {
-                                        RegistrationStep.LOOK_CENTER -> RegistrationStep.TURN_LEFT
-                                        RegistrationStep.TURN_LEFT -> RegistrationStep.TURN_RIGHT
-                                        RegistrationStep.TURN_RIGHT -> RegistrationStep.COMPLETED
-                                        RegistrationStep.COMPLETED -> RegistrationStep.COMPLETED
+                                    // Generate the face embedding vector safely
+                                    val embedding = faceNetEncoder.getFaceEmbedding(scaledFaceBitmap)
+                                    capturedEmbeddings[currentStep.key] = embedding
+
+                                    withContext(Dispatchers.Main) {
+                                        currentStep = when (currentStep) {
+                                            RegistrationStep.LOOK_CENTER -> RegistrationStep.TURN_LEFT
+                                            RegistrationStep.TURN_LEFT -> RegistrationStep.TURN_RIGHT
+                                            RegistrationStep.TURN_RIGHT -> RegistrationStep.COMPLETED
+                                            RegistrationStep.COMPLETED -> RegistrationStep.COMPLETED
+                                        }
                                     }
+                                } catch (e: Exception) {
+                                    Log.e("RegisterFaceId", "Bitmap operation failed safely", e)
                                 }
                             }
 
+                            // Delay to allow the user time to adjust their face angle for the next step
                             kotlinx.coroutines.delay(1200)
                             isProcessingFrame = false
                         }
