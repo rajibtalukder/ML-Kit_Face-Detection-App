@@ -45,6 +45,7 @@ dependencies {
     implementation (libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.firebase.crashlytics.buildtools)
     implementation(libs.google.gson)
+    implementation(libs.litert.gpu)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.navigation3.runtime)

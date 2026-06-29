@@ -102,6 +102,7 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
                             lastCroppedFace = scaledFaceBitmap
 
                             val embedding = faceNetEncoder.getFaceEmbedding(scaledFaceBitmap)
+                            Log.d("FaceDetection checking","Face embedding extracted 1 $embedding")
 
                             synchronized(embeddingBuffer) {
                                 embeddingBuffer.add(embedding)
@@ -123,12 +124,13 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
 
                                 // Average all collected embeddings into one stable embedding vector
                                 val averagedEmbedding = averageEmbeddings(bufferedEmbeddings)
-
+                                Log.d("FaceDetection checking","Face embedding extracted 2 $averagedEmbedding")
                                 val (matchedUser, highestSimilarity) = findBestMatch(
                                     liveEmbedding = averagedEmbedding,
                                     databaseUsers = registeredUsersList,
                                     minSimilarityThreshold = 0.65f // Threshold for averaged/stable embeddings
                                 )
+                                Log.d("FaceDetection checking","Face embedding extracted 3 $matchedUser")
 
                                 withContext(Dispatchers.Main) {
                                     framesCollected = 0
@@ -143,7 +145,7 @@ fun VerifyFaceIDScreen(onVerificationSuccess: (UserEntity) -> Unit, onBackPress:
                                     } else {
                                         Log.d("FaceDB_Match", "❌ No match. Best: $highestSimilarity")
                                         verificationStatus = null
-                                        statusText = "❌ Not Recognized (${(highestSimilarity * 100).toInt()}%)\nTry again — look straight at the camera"
+                                        statusText = "❌ Not Recognized\nTry again — look straight at the camera"
 
                                         delay(1200)
                                         statusText = "Position your face in the frame"
@@ -274,15 +276,20 @@ private fun findBestMatch(
     minSimilarityThreshold: Float
 ): Pair<UserEntity?, Float> {
     var bestMatchUser: UserEntity? = null
-    var highestSimilarityFound = -1.0f
+    // Start at your minimum threshold instead of -1.0f
+    var highestSimilarityFound = minSimilarityThreshold
 
-    Log.d("FaceDB_Match", "⚡ Scanning ${databaseUsers.size} profiles with averaged embedding...")
+    // Move heavy string allocations out of the loop
+    val scanLog = StringBuilder()
 
     for (userContainer in databaseUsers) {
         for (savedEmbeddingEntity in userContainer.embeddings) {
             val similarity = calculateCosineSimilarity(liveEmbedding, savedEmbeddingEntity.faceId)
-            Log.d("FaceDB_Match", "👤 ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] -> ${(similarity * 100).toInt()}%")
 
+            // Optional: Build a debug log efficiently if needed
+            scanLog.append("👤 ${userContainer.user.name} [${savedEmbeddingEntity.poseType}] -> ${(similarity * 100).toInt()}%\n")
+
+            // Only track it if it actually beats the current highest AND meets the minimum threshold
             if (similarity > highestSimilarityFound) {
                 highestSimilarityFound = similarity
                 bestMatchUser = userContainer.user
@@ -290,27 +297,27 @@ private fun findBestMatch(
         }
     }
 
-    Log.d("FaceDB_Match", "📊 Best: ${(highestSimilarityFound * 100).toInt()}% (threshold: ${(minSimilarityThreshold * 100).toInt()}%)")
-    val matched = if (highestSimilarityFound >= minSimilarityThreshold) bestMatchUser else null
-    return Pair(matched, highestSimilarityFound)
+    // Single log call instead of spamming Logcat inside nested loops
+    Log.d("FaceDB_Match", "📊 Best Match: ${bestMatchUser?.name ?: "None"} at ${(highestSimilarityFound * 100).toInt()}%")
+
+    // If no face passed the threshold, highestSimilarityFound remains the minSimilarityThreshold.
+    // To be clean, return 0.0f or the actual sub-threshold highest if you want to track it.
+    return if (bestMatchUser != null) {
+        Pair(bestMatchUser, highestSimilarityFound)
+    } else {
+        Pair(null, 0.0f) // Or return the actual failed similarity if needed for debugging
+    }
 }
 
 /**
  * Computes cosine similarity between two L2-normalized embedding vectors.
  */
-private fun calculateCosineSimilarity(vectorA: FloatArray, vectorB: FloatArray): Float {
-    if (vectorA.size != vectorB.size) return 0.0f
-
+fun calculateCosineSimilarity(vector1: FloatArray, vector2: FloatArray): Float {
     var dotProduct = 0.0f
-    var normA = 0.0f
-    var normB = 0.0f
-
-    for (i in vectorA.indices) {
-        dotProduct += vectorA[i] * vectorB[i]
-        normA += vectorA[i] * vectorA[i]
-        normB += vectorB[i] * vectorB[i]
+    for (i in vector1.indices) {
+        dotProduct += vector1[i] * vector2[i]
     }
-
-    val denominator = kotlin.math.sqrt(normA) * kotlin.math.sqrt(normB)
-    return if (denominator.toDouble() == 0.0) 0.0f else (dotProduct / denominator)
+    // Because both vectors are already L2 normalized,
+    // the dot product IS the cosine similarity.
+    return dotProduct
 }
