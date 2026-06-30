@@ -8,7 +8,7 @@ A high-performance, real-time Android face recognition application utilizing **T
 
 Here is a look at the application in action. Place your extracted screenshots in a directory named `screenshots/` at the root of your repository to display them seamlessly below.
 
-|:-----------------------------------------------------------------------:|:---------------------------------------------------------------------:|:-------------------------------------------------------------------------:|
+
 | <img src="screenshots/ss1.png" width="240" alt="Live Verification UI"/> | <img src="screenshots/ss2.png" width="240" alt="User Enrollment UI"/> | <img src="screenshots/ss3.png" width="240" alt="Database Management UI"/> |
 | <img src="screenshots/ss4.png" width="240" alt="Live Verification UI"/> | <img src="screenshots/ss5.png" width="240" alt="User Enrollment UI"/> | <img src="screenshots/ss5.png" width="240" alt="Database Management UI"/> |
 
@@ -28,19 +28,6 @@ Here is a look at the application in action. Place your extracted screenshots in
 ## 🛠️ Deep Dive: Highly Optimized Encoder
 
 The performance core utilizes an optimized **MobileFaceNet** configuration to handle input tensors efficiently:
-
-```kotlin
-// Snippet highlighting the ultra-fast L2 Normalization & Hardware Allocation
-val options = Interpreter.Options().apply {
-    val compatList = CompatibilityList()
-    if (compatList.isDelegateSupportedOnThisDevice) {
-        gpuDelegate = GpuDelegate(compatList.bestOptionsForThisDevice)
-        addDelegate(gpuDelegate)
-    } else {
-        setNumThreads(Runtime.getRuntime().availableProcessors().coerceAtMost(4))
-    }
-}
-```
 
 
 ## 🤝 Contributing
