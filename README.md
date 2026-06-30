@@ -8,11 +8,9 @@ A high-performance, real-time Android face recognition application utilizing **T
 
 Here is a look at the application in action. Place your extracted screenshots in a directory named `screenshots/` at the root of your repository to display them seamlessly below.
 
-|                         🔐 1. Live Verification                         |                         ➕ 2. User Enrollment                          |                         📊 3. Database & Profiles                         |
 |:-----------------------------------------------------------------------:|:---------------------------------------------------------------------:|:-------------------------------------------------------------------------:|
 | <img src="screenshots/ss1.png" width="240" alt="Live Verification UI"/> | <img src="screenshots/ss2.png" width="240" alt="User Enrollment UI"/> | <img src="screenshots/ss3.png" width="240" alt="Database Management UI"/> |
 | <img src="screenshots/ss4.png" width="240" alt="Live Verification UI"/> | <img src="screenshots/ss5.png" width="240" alt="User Enrollment UI"/> | <img src="screenshots/ss5.png" width="240" alt="Database Management UI"/> |
-|    *Real-time facial tracking, embedding extraction, and matching.*     |       *Registering new identities into the local vector space.*       |           *Managing saved profiles and distinct pose vectors.*            |
 
 ---
 
@@ -44,27 +42,6 @@ val options = Interpreter.Options().apply {
 }
 ```
 
----
-
-## 🔧 Getting Started
-
-### 📂 Screenshot Directory Structure
-To make your repository presentation mirror the table alignment above, ensure your root directory follows this layout:
-```text
-├── app/
-├── screenshots/
-│   ├── live_verification.png
-│   ├── user_enrollment.png
-│   └── database_view.png
-└── README.md
-```
-
-### 📋 Prerequisites
-- Android Studio Ladybug (or newer)
-- Target SDK 34+
-- A physical Android device with a working camera for production-grade frame rates.
-
----
 
 ## 🤝 Contributing
 Contributions, issue reports, and feature requests are welcome! Feel free to check out the issues page if you want to help optimize the vector matching pipeline further.
